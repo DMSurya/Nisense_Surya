@@ -1,0 +1,26 @@
+# Copyright (c) 2026 AARMS
+# SPDX-License-Identifier: Apache-2.0
+
+config COUNTER_MCP79XX
+	bool "Microchip MCP79xx RTC driver (out-of-tree)"
+	default y
+	depends on DT_HAS_MICROCHIP_MCP79XX_ENABLED
+	depends on I2C
+	depends on RTC
+	help
+	  Out-of-tree MCP79xx driver registering the Zephyr RTC API only
+	  (compatible "microchip,mcp79xx"). Fixes year encoding (years since
+	  2000 → tm_year offset 100) vs upstream counter driver bugs.
+
+	  Requires CONFIG_RTC=y (do not select RTC here — that creates
+	  circular select deps with other RTC drivers such as DS1307).
+
+	  Features:
+	  - RTC API: set/get time, optional alarms + calibration
+	  - 24-hour format (avoids errata #1 12h date-increment issue)
+	  - Calibration: OSCTRIM ±127 (±129 ppm physical); Zephyr polarity
+	  - MFP GPIO for alarm IRQ (IF clear only until Track B)
+
+	  Supported register map: MCP7940M/N and related MCP79xx parts.
+	  This product targets MCP7940N (VBAT switchover). Binding "variant"
+	  is informational today — not used for feature gating.

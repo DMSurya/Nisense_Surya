@@ -1,0 +1,76 @@
+/* Sensor group: MAX20360 PMIC + regulators + charger */
+&i2c0 {
+	max20360: max20360@28 {
+		compatible = "maxim,max20360";
+		reg = <0x28>;
+		status = "okay";
+		interrupt-gpios = <&gpio0 31 GPIO_ACTIVE_LOW>;
+		maxim,variant = "max20360f";
+		ivmon-gpios = <&gpio1 13 GPIO_ACTIVE_HIGH>;
+
+		max20360_regulators: regulators {
+			compatible = "maxim,max20360-regulator";
+
+			max20360_bk1: bk1 {
+				maxim,source = "bk1";
+				regulator-name = "vdd_core";
+				regulator-min-microvolt = <550000>;
+				regulator-max-microvolt = <1200000>;
+				regulator-init-microvolt = <1200000>;
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			max20360_bk2: bk2 {
+				maxim,source = "bk2";
+				regulator-name = "vdd_io";
+				regulator-min-microvolt = <550000>;
+				regulator-max-microvolt = <2125000>;
+				regulator-init-microvolt = <1800000>;
+				regulator-boot-on;
+				regulator-always-on;
+				maxim,power-cycle-on-init;
+				maxim,power-cycle-delay-ms = <150>;
+			};
+
+			max20360_bk3: bk3 {
+				maxim,source = "bk3";
+				regulator-name = "vdd_bk3";
+				regulator-min-microvolt = <550000>;
+				regulator-max-microvolt = <3700000>;
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			max20360_bbout: bbout {
+				maxim,source = "bbout";
+				regulator-name = "vcc_5v";
+				regulator-min-microvolt = <2500000>;
+				regulator-max-microvolt = <5000000>;
+				regulator-init-microvolt = <5000000>;
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			max20360_l2out: l2out {
+				maxim,source = "l2out";
+				regulator-name = "vcc_3v_buzzer";
+				regulator-min-microvolt = <800000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-init-microvolt = <3000000>;
+				regulator-boot-on;
+				regulator-always-on;
+			};
+		};
+
+		max20360_charger: charger {
+			compatible = "maxim,max20360-charger";
+			status = "okay";
+			charge-voltage-microvolt = <4200000>;
+			/* RISET=4 kΩ → IFCHG ≈ 500 mA (not I²C-programmable) */
+			riset-ohms = <4000>;
+			/* Legal ILimCntl codes: 50/90/150/200/300/400/450/1000 mA */
+			input-current-limit-microamp = <450000>;
+		};
+	};
+};

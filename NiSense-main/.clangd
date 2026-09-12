@@ -1,0 +1,15 @@
+# Use the NCS/Zephyr build compile database for go-to-def / find-refs.
+# Regenerate after west/CMake reconfigure:
+#   build_sdk_v330/NiSense/compile_commands.json
+CompileFlags:
+  CompilationDatabase: build_sdk_v330/NiSense
+  Add:
+    - -Wno-unknown-warning-option
+
+Index:
+  Background: Build
+
+Diagnostics:
+  Suppress:
+    - drv_unknown_argument
+    - pp_file_not_found

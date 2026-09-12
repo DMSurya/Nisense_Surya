@@ -1,0 +1,4 @@
+name: max20360_drivers
+build:
+  cmake: .
+  kconfig: Kconfig

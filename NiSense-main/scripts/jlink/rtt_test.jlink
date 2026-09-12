@@ -1,0 +1,8 @@
+r
+h
+SetRTTAddr 0x20000000
+g
+Sleep 3000
+h
+q
+

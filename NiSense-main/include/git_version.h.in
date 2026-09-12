@@ -1,0 +1,20 @@
+/* Auto-generated at build time — do not edit. */
+#ifndef GIT_VERSION_H_
+#define GIT_VERSION_H_
+
+#define FW_VERSION_MAJOR @FW_VERSION_MAJOR@
+#define FW_VERSION_MINOR @FW_VERSION_MINOR@
+#define FW_VERSION_PATCH @FW_VERSION_PATCH@
+
+#define FW_VERSION_STRING "v@FW_VERSION_MAJOR@.@FW_VERSION_MINOR@.@FW_VERSION_PATCH@"
+
+#define GIT_HASH "@GIT_HASH@"
+#define GIT_HASH_FULL "@GIT_HASH_FULL@"
+
+/* 1 when the working tree had uncommitted changes at build time. */
+#define GIT_DIRTY @GIT_DIRTY@
+
+/* Short hash, with "-dirty" suffix when applicable. */
+#define GIT_VERSION_STRING "@GIT_VERSION_STRING@"
+
+#endif /* GIT_VERSION_H_ */

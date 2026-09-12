@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# Dedicated log level for the out-of-tree MAX20360 fuel gauge driver.
+
+if FUEL_GAUGE_MAX20360
+
+module = FUEL_GAUGE_MAX20360
+module-str = MAX20360 fuel gauge
+source "subsys/logging/Kconfig.template.log_config"
+
+endif

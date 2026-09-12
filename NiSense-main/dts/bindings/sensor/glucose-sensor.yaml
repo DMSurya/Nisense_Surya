@@ -1,0 +1,154 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Non-invasive glucose measurement sensor using optical sensing
+  
+  This driver controls an infrared LED (1550nm) and reads glucose signal
+  from a photodiode via an instrumentation amplifier chain. The system
+  uses near-infrared spectroscopy (NIRS) principles to detect glucose
+  concentration through tissue optical properties.
+  
+  Hardware architecture (see docs/sensors/GLUCOSE_ANALOG_FRONTEND.md):
+  - IR LEDs SMC1550 (1550nm) + SMC1050 (1050nm) paralleled via GPIO
+    -> BC847 -> SI2333CDS (single drive; mixed return, not sequenced)
+  - InGaAs PIN photodiode (Hamamatsu G11193-03) -> OPA358 TIA
+    (Rf = 10 MOhm, Cf ≈ 0.8 pF; EN tied to 3V3)
+  - INA122UA (RG pins shorted to GND; REF = GND) -> SAADC
+  - Discrete analog AFE; no register-mapped sensor IC
+
+compatible: "glucose-sensor"
+
+include:
+  - name: base.yaml
+
+properties:
+  ir-led-gpios:
+    type: phandle-array
+    required: true
+    description: |
+      GPIO pin controlling IR LED power via transistor/MOSFET switch.
+      Active high - GPIO set high enables LED illumination.
+      Example: <&gpio0 24 GPIO_ACTIVE_HIGH>
+
+  io-channels:
+    type: phandle-array
+    required: true
+    description: |
+      ADC channel for glucose signal input. Must reference an ADC channel
+      node configured with appropriate gain and reference voltage.
+      Example: <&adc 1> where channel 1 is configured for AIN1 (P0.03)
+
+  num-samples:
+    type: int
+    default: 80
+    description: |
+      Number of ADC samples to capture per measurement cycle.
+      Higher values improve signal-to-noise ratio but increase
+      measurement time. Typical range: 20-200 samples.
+      Default: 80 samples
+
+  led-delay-ms:
+    type: int
+    default: 2000
+    description: |
+      Pre-sampling delay in milliseconds after LED activation.
+      This allows LED output and tissue response to stabilize
+      before capturing ADC samples. Typical range: 1000-5000ms.
+      Default: 2000ms (2 seconds)
+
+  sample-rate-hz:
+    type: int
+    default: 100
+    description: |
+      ADC sampling rate in Hz (samples per second). Used to calculate
+      inter-sample delay. Maximum rate depends on ADC peripheral
+      capabilities and desired signal quality.
+      Default: 100 Hz (10ms per sample)
+
+  calibration-offset-mv:
+    type: int
+    default: 0
+    description: |
+      Calibration offset in millivolts to subtract from raw ADC
+      readings. This compensates for photodiode dark current and
+      amplifier offset. Measured during initialization with LED off.
+      Default: 0 (no offset correction)
+
+  calibration-gain:
+    type: int
+    default: 1000
+    description: |
+      Calibration gain multiplier applied to ADC readings after
+      offset correction, stored as integer (1000 = 1.0, 500 = 0.5, 2000 = 2.0).
+      Used to normalize measurements to known glucose standards.
+      Default: 1000 (1.0 = no gain correction)
+
+  algorithm-intercept-constant:
+    type: int
+    default: 161832
+    description: |
+      Watch Intercept Algorithm constant stored as fixed-point (x1000).
+      Example: 161832 = 161.832221420583.
+      Intercept value for baseline glucose prediction in algorithm.
+      Default: 161832 (empirically determined from calibration matrix)
+
+  algorithm-outlier-k-factor:
+    type: int
+    default: 1750
+    description: |
+      K-Sigma outlier detection factor stored as fixed-point (x1000).
+      Example: 1750 = 1.75.
+      Controls sensitivity of outlier detection (higher = less aggressive).
+      Default: 1750 (tuned for sensor noise characteristics)
+
+  glucose-normalization-divisor:
+    type: int
+    default: 18
+    description: |
+      Divisor for normalizing glucose from mg/dL to mmol/L.
+      Used in HOMA-IR insulin resistance calculations.
+      Default: 18
+
+  homa-ir-divisor:
+    type: int
+    default: 405
+    description: |
+      Standard HOMA-IR (Homeostasis Model Assessment) divisor.
+      Formula: HOMA-IR = (glucose * insulin) / divisor.
+      Default: 405 (standard HOMA-IR divisor per Matthews et al. 1985)
+
+  insulin-calibration-adjustment:
+    type: int
+    default: 1050
+    description: |
+      Calibration adjustment for insulin measurements, stored as fixed-point (x1000).
+      Example: 1050 = 1.05 (5% adjustment).
+      Applied to fasting insulin values in HOMA-IR calculations.
+      Default: 1050 (5% calibration adjustment factor)
+
+  homa-ir-threshold-optimal:
+    type: int
+    default: 1000
+    description: |
+      Upper threshold for optimal HOMA-IR range, stored as fixed-point (x1000).
+      Example: 1000 = 1.0.
+      HOMA-IR below this value indicates optimal insulin sensitivity.
+      Default: 1000 (standard cutoff for insulin-sensitive individuals)
+
+  homa-ir-threshold-normal:
+    type: int
+    default: 2000
+    description: |
+      Upper threshold for normal HOMA-IR range, stored as fixed-point (x1000).
+      Example: 2000 = 2.0.
+      HOMA-IR between optimal and this value indicates normal insulin sensitivity.
+      Default: 2000
+
+  homa-ir-threshold-moderate:
+    type: int
+    default: 3000
+    description: |
+      Upper threshold for moderate HOMA-IR range, stored as fixed-point (x1000).
+      Example: 3000 = 3.0.
+      HOMA-IR between normal and this value indicates moderate insulin resistance.
+      Default: 3000 (beginning of clinically significant insulin resistance)

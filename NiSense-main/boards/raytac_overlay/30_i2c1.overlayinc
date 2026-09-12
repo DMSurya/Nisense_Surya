@@ -1,0 +1,33 @@
+/* I2C1 bus controller + pinctrl */
+&pinctrl {
+	i2c1_sensor_hub: i2c1_sensor_hub {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SDA, 0, 16)>,
+				<NRF_PSEL(TWIM_SCL, 0, 15)>;
+			/* PCA9306 requires pull-ups on both sides.
+			 * External resistors are missing on the nRF side.
+			 * Enable internal ~13 kΩ pull-ups as interim fix
+			 * until external 4.7 kΩ resistors are fitted. */
+			bias-pull-up;
+		};
+	};
+
+	i2c1_sensor_hub_sleep: i2c1_sensor_hub_sleep {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SDA, 0, 16)>,
+				<NRF_PSEL(TWIM_SCL, 0, 15)>;
+		};
+	};
+};
+
+&i2c1 {
+	compatible = "nordic,nrf-twim";
+	status = "okay";
+	pinctrl-0 = <&i2c1_sensor_hub>;
+	pinctrl-1 = <&i2c1_sensor_hub_sleep>;
+	pinctrl-names = "default", "sleep";
+	clock-frequency = <I2C_BITRATE_STANDARD>;
+
+	/* Large buffer for MAX32664 firmware update */
+	zephyr,concat-buf-size = <8320>;
+};

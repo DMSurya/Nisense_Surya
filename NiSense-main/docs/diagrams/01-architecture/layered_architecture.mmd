@@ -1,0 +1,127 @@
+%%{init: {'theme': 'base'}}%%
+%% =============================================================================
+%% LAYERED ARCHITECTURE DIAGRAM - Zephyr Stack
+%% =============================================================================
+%% Purpose: Shows the Zephyr-compliant layer separation with init levels
+%% Scope: From hardware through Zephyr to application
+%% Assumptions:
+%%   - Standard Zephyr init levels (PRE_KERNEL_1/2, POST_KERNEL, APPLICATION)
+%%   - Out-of-tree drivers initialized at POST_KERNEL
+%%   - Application modules at APPLICATION init level
+%% =============================================================================
+
+graph TB
+    subgraph "APPLICATION Init Level (Priority 90+)"
+        direction LR
+        App1[main.c<br/>Entry Point]
+        App2[ui.c + ui_shell<br/>LVGL single-screen]
+        App3[health_sched.c<br/>Measurement agent]
+        App4[power_mgr.c<br/>Battery + display policy]
+        App5[ble_gatt.c<br/>GATT services]
+        App6[glucose.c / ppg.c<br/>Sensor wrappers]
+        App7[fat_access + usb_msc<br/>Exclusive storage]
+    end
+
+    subgraph "POST_KERNEL Init Level (Priority 40-89)"
+        direction LR
+        subgraph "Out-of-Tree Drivers (drivers/)"
+            OOT1[max32664<br/>Sensor Hub<br/>Priority 60]
+            OOT2[ppg_algo<br/>Algorithm<br/>Priority 61]
+            OOT3[max20360<br/>PMIC<br/>Priority 50]
+            OOT4[glucose<br/>ADC Sensor<br/>Priority 60]
+            OOT5[wexx<br/>Wi-Fi<br/>Priority 70]
+        end
+        subgraph "Zephyr Subsystems"
+            ZS1[Logging<br/>RTT Backend]
+            ZS2[Shell<br/>Disabled]
+            ZS3[BLE Stack<br/>SoftDevice]
+            ZS4[USB Stack<br/>UDC]
+            ZS5[Filesystem<br/>FatFS userdata + MSC]
+        end
+    end
+
+    subgraph "PRE_KERNEL_2 Init Level (Priority 20-39)"
+        direction LR
+        PK2_1[I2C Controllers<br/>i2c0, i2c1]
+        PK2_2[SPI Controllers<br/>spi2]
+        PK2_3[GPIO Controllers<br/>gpio0, gpio1]
+        PK2_4[ADC<br/>adc0]
+        PK2_5[Counter/RTC<br/>mcp7940n]
+    end
+
+    subgraph "PRE_KERNEL_1 Init Level (Priority 0-19)"
+        direction LR
+        PK1_1[Clock Control<br/>nRF Oscillators]
+        PK1_2[Interrupt Controller<br/>NVIC]
+        PK1_3[Memory<br/>Stack/Heap Init]
+    end
+
+    subgraph "Hardware Abstraction"
+        direction LR
+        HW1[nRF52840 HAL<br/>nrfx Drivers]
+        HW2[Device Tree<br/>raytac_mdbt50q_db_40.overlay]
+        HW3[Kconfig<br/>prj.conf]
+    end
+
+    subgraph "Physical Hardware"
+        direction LR
+        PHW1[nRF52840 SoC<br/>ARM Cortex-M4F]
+        PHW2[I2C Buses<br/>PMIC, Sensors]
+        PHW3[SPI Bus<br/>Display]
+        PHW4[USB<br/>Charging + MSC]
+    end
+
+    %% Vertical flow
+    App1 --> OOT1
+    App2 --> ZS5
+    App3 --> OOT1
+    App4 --> OOT3
+    App5 --> ZS3
+    App6 --> OOT4
+    App6 --> OOT2
+    App7 --> ZS4
+    App7 --> ZS5
+
+    OOT1 --> PK2_1
+    OOT2 --> OOT1
+    OOT3 --> PK2_1
+    OOT4 --> PK2_4
+    OOT5 --> ZS3
+
+    ZS1 --> PK2_3
+    ZS3 --> PK1_1
+    ZS4 --> PHW4
+    ZS5 --> PK2_2
+
+    PK2_1 --> PK1_1
+    PK2_2 --> PK1_1
+    PK2_3 --> PK1_2
+    PK2_4 --> PK1_1
+    PK2_5 --> PK2_1
+
+    PK1_1 --> HW1
+    PK1_2 --> HW1
+    PK1_3 --> HW1
+
+    HW1 --> PHW1
+    HW2 --> HW1
+    HW3 --> HW2
+
+    PHW1 --> PHW2
+    PHW1 --> PHW3
+    PHW1 --> PHW4
+
+    %% Styling
+    classDef appLevel fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
+    classDef postKernel fill:#bbdefb,stroke:#1565c0,stroke-width:2px
+    classDef preKernel2 fill:#fff9c4,stroke:#f9a825,stroke-width:2px
+    classDef preKernel1 fill:#ffccbc,stroke:#e64a19,stroke-width:2px
+    classDef hal fill:#e1bee7,stroke:#8e24aa,stroke-width:2px
+    classDef hw fill:#cfd8dc,stroke:#455a64,stroke-width:2px
+
+    class App1,App2,App3,App4,App5,App6 appLevel
+    class OOT1,OOT2,OOT3,OOT4,OOT5,ZS1,ZS2,ZS3,ZS4,ZS5 postKernel
+    class PK2_1,PK2_2,PK2_3,PK2_4,PK2_5 preKernel2
+    class PK1_1,PK1_2,PK1_3 preKernel1
+    class HW1,HW2,HW3 hal
+    class PHW1,PHW2,PHW3,PHW4 hw

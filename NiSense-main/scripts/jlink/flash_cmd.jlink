@@ -1,0 +1,4 @@
+r
+loadfile E:/AARMS/HCM/NiSense/build_sdk_v330/merged.hex
+r
+exit

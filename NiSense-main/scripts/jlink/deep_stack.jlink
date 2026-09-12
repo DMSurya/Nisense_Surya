@@ -1,0 +1,23 @@
+connect
+halt
+
+// Read more of the stack to understand the call chain
+// MSP at 0x200032A8, let's read much more
+mem32 0x200032A8 32
+
+// And PSP at 0x20003670
+mem32 0x20003670 32
+
+// Check if MCUboot's boot_go area was called recently
+// boot_go is at 0xE38
+mem32 0xE30 8
+
+// Check the flash_map pointer that flash_area_read was using
+// R1 from stack was 0x200032C0 - this might be the flash area pointer
+mem32 0x200032C0 8
+
+// Check what flash area structures look like
+mem32 0x20001030 16
+
+exit
+

@@ -1,0 +1,8 @@
+r
+SetBP 0xAFA
+g
+Sleep 3500
+h
+regs
+q
+

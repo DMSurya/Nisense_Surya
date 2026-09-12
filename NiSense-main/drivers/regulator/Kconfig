@@ -1,0 +1,41 @@
+if REGULATOR
+
+config REGULATOR_MAX20360
+	bool "Maxim MAX20360 PMIC Regulator"
+	default n
+	depends on I2C && GPIO
+	help
+	  Enable driver for Maxim MAX20360 power management IC.
+	  Supports multi-output voltage regulation via standard Zephyr regulator API.
+
+if REGULATOR_MAX20360
+
+config REGULATOR_MAX20360_COMMON_INIT_PRIORITY
+	int "MAX20360 parent PMIC initialization priority"
+	default 74
+	depends on REGULATOR_MAX20360
+	help
+	  Initialization priority of the MAX20360 parent PMIC device.
+	  Must be greater than I2C (70) but less than child regulators (75).
+
+config REGULATOR_MAX20360_INIT_PRIORITY
+	int "MAX20360 child regulator initialization priority"
+	default 75
+	depends on REGULATOR_MAX20360
+	help
+	  Initialization priority of the MAX20360 child regulator devices.
+	  Must be greater than parent PMIC (74) and I2C (70) drivers.
+
+config REGULATOR_MAX20360_SHIP_USE_SEAL
+	bool "ship_mode uses SEAL (0xE5) instead of OFF (0xB2)"
+	default y
+	depends on REGULATOR_MAX20360
+	help
+	  When enabled, regulator_parent_ship_mode() writes PWR_SEAL_CMD (0xE5)
+	  for true shipping / lowest quiescent current. When disabled, writes
+	  PWR_OFF_CMD (0xB2). Wake typically requires CHGIN or KIN per board
+	  PwrRstCfg — test with USB power available before relying on SEAL.
+
+endif # REGULATOR_MAX20360
+
+endif # REGULATOR

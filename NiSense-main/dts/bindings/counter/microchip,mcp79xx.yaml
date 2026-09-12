@@ -1,0 +1,55 @@
+# Copyright (c) 2026 AARMS
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Microchip MCP79xx family Real-Time Clock (RTC) with I2C interface
+  
+  This binding supports all MCP79xx variants:
+  - MCP7940M: 64 bytes SRAM, Battery backup
+  - MCP7940N: 64 bytes SRAM, Unique ID, Battery backup
+  - MCP79400: 1Kbit EEPROM, Battery backup
+  - MCP79410: 1Kbit EEPROM, Unique ID, Battery backup  
+  - MCP79401: 1Kbit EEPROM, Unique ID (no battery backup)
+  - MCP79402: 1Kbit EEPROM (no battery backup)
+  - MCP79411: 1Kbit EEPROM, Unique ID, Supercap backup
+  - MCP79412: 1Kbit EEPROM, Supercap backup
+  
+  All variants share the same RTC register map (0x00-0x1F) and use
+  BCD encoding for time/date storage with year offset from 2000.
+  
+  Dual API Support:
+  - RTC API (primary): Calendar-based operations using struct rtc_time
+  - Counter API (available): Unix epoch timestamp (seconds since 1970-01-01)
+  
+  Alarms: 2 channels with match on sec/min/hr/day/month/weekday
+  Calibration: ±127 ppm digital trimming in 1 ppm steps
+
+compatible: "microchip,mcp79xx"
+
+include: [base.yaml, i2c-device.yaml]
+
+properties:
+  int-gpios:
+    type: phandle-array
+    description: |
+      MFP (Multi-Function Pin) GPIO connection for alarm interrupts.
+      The MFP pin can be configured as active-low or active-high.
+      If not connected, alarms can still be polled via get_pending_int().
+
+  variant:
+    type: string
+    enum:
+      - "mcp7940m"
+      - "mcp7940n"
+      - "mcp79400"
+      - "mcp79410"
+      - "mcp79401"
+      - "mcp79402"
+      - "mcp79411"
+      - "mcp79412"
+    description: |
+      Specific chip variant (optional). Used for feature detection:
+      - SRAM access (7940M/N only)
+      - Unique ID reading (N variants)
+      - EEPROM support (794xx series)
+      If omitted, driver operates in RTC-only mode.

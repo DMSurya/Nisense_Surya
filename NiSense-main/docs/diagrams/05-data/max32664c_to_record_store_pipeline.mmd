@@ -1,0 +1,148 @@
+%%{init: {'theme': 'base', 'flowchart': {'htmlLabels': false}}}%%
+%% =============================================================================
+%% MAX32664C (GWEC) → NOR record_store pipeline
+%% Updated: 2026-07-24
+%%
+%% Production default: MODE_RAW + chosen max86141_ppg @ 25 Hz
+%% Window: RESP=y → 20 s / 500 samples (Kconfig); RESP=n → 12 s / 300
+%% See docs/architecture/PPG_ALGO_PARAMS_AND_SCHEDULING.md
+%% Alternate: MODE_HUB → WHRM frames via process_hub_sample (clamp ≤30)
+%% Wake: MFIO IRQ (P1.06, hub 0xB8) primary + poll 200 ms fallback
+%% RSTN: P0.20 (boot reset / BL entry with MFIO)
+%% Slot: 256 B; PPG sample 42 B; 5 samples/PPG_RAW chunk
+%% =============================================================================
+
+flowchart TB
+  subgraph S1 [1_Boot_variant_C]
+    A1[max32664_init] --> A2[RSTN_P0_20_plus_MFIO_app_entry]
+    A2 --> A3[detect_VARIANT_C_FW30to32]
+    A3 --> A4[max32664c_init]
+    A4 --> A5[enable_AFE_accel_WHRM]
+    A5 --> A6[output_PAUSE]
+    A6 --> A7[MFIO_input_IRQ_plus_hub_0xB8]
+  end
+
+  subgraph S2 [2_Start_cycle]
+    B1[health_sched_STEP_PPG] --> B2[ppg_start_measurement_N]
+    B2 --> B3[prox_start_check]
+    B3 --> B4[ppg_algo_start_measurement]
+    B4 --> B5[hub_attr_set_START]
+    B5 --> B6[accel_feeder_start]
+    B5 --> B7[poll_work_200ms_start]
+  end
+
+  A7 --> B1
+
+  subgraph S3 [3_Accel_feeder_loop]
+    C1[read_LIS2DS12_XYZ] --> C2[feed_hub_0x14]
+    C2 --> C3[sleep_40ms_25Hz]
+    C3 -->|while_active| C1
+  end
+
+  B6 -.-> C1
+
+  B5 --> ModeQ{MODE_RAW?}
+
+  subgraph S4wake [4_Wake_MFIO_or_poll]
+    W1[MFIO_P1_06_falling] --> W3[sem_give]
+    W2[poll_200ms_FIFO_count] --> W3
+  end
+
+  B7 --> W2
+  A7 -.-> W1
+
+  subgraph S4a [4A_RAW_FIFO_drain]
+    D2[FIFO_count_0x12_00] --> D3["for_each_FIFO_frame"]
+    D3 --> D4[pop_0x12_01]
+    D4 --> D5[unpack_LED_24B]
+    D5 --> D6["while_queue_lt_32_push_batches_16"]
+    D6 --> D7[max86141_ppg_queue]
+    D3 -->|next_frame| D4
+  end
+
+  subgraph S4b [4B_HUB_WHRM]
+    E2[FIFO_count] --> E3["discard_stale_up_to_192"]
+    E3 --> E4[read_newest_frame]
+    E4 --> E5[max32664c_parse_fifo]
+    E5 --> E6[hub_sample_ready]
+  end
+
+  ModeQ -->|yes| D2
+  ModeQ -->|no| E2
+  W3 -.->|hub_fetch_waiters| E2
+
+  subgraph S5 [5_ppg_algo_tick]
+    F0{source}
+    F1["RAW_work_40ms"]
+    F2["while_fetch_until_EAGAIN"]
+    F3[process_sample]
+    F4["HUB_work_250ms"]
+    F5[fetch_wait_sem]
+    F6[process_hub_sample]
+    F7[ppg_samples_add]
+    F8[samples_processed_plus]
+    F9{N_ge_target?}
+    F0 -->|RAW| F1 --> F2 --> F3 --> F7 --> F8 --> F9
+    F2 -->|more_in_queue| F2
+    F0 -->|HUB| F4 --> F5 --> F6 --> F7
+    F8 -->|no| F1
+  end
+
+  F1 -.->|on_demand_drain| D2
+  D7 --> F0
+  E6 --> F0
+  W3 --> F5
+
+  subgraph S6 [6_Per_sample_side_effects]
+    G1[prox_miss_streak_gate]
+    G2[PPG_TRIG_SAMPLE_READY]
+    G3["BLE_progress_every_5"]
+    F8 --> G1
+    F8 --> G2 --> G3
+  end
+
+  F9 -->|yes_500_or_HUB_le_30| S7
+
+  subgraph S7 [7_finalize_once]
+    H1{HUB?}
+    H2[pin_hub_vitals]
+    H3[DSP_HR_SpO2_Hb_resp_HRV_BP]
+    H4[calibration_apply_ppg]
+    H5[quality_gate]
+    H6[feeder_stop_hub_PAUSE]
+    H1 -->|yes| H2 --> H4
+    H1 -->|no| H3 --> H4
+    H4 --> H5 --> H6
+  end
+
+  subgraph S8 [8_Logger_chunk_loops]
+    I1[pack_rec_vitals] --> I2[append_VITALS_parent_id]
+    I2 --> I3["K_ceil_N_div_5_chunks"]
+    I3 --> I4["for_ci_0_to_K"]
+    I4 --> I5[pack_chunk_hdr]
+    I5 --> I6["for_i_0_to_min_5"]
+    I6 --> I7[pack_42B_sample]
+    I7 -->|next_i| I6
+    I6 --> I8[append_PPG_RAW]
+    I8 -->|next_ci| I4
+    I8 --> I9[home_last_results]
+  end
+
+  H6 --> I1
+
+  subgraph S9 [9_NOR_slot]
+    J1[alloc_record_id] --> J2[16B_frame_plus_240B]
+    J2 --> J3[nor_qspi_busy]
+    J3 --> J4[QSPI_program]
+  end
+
+  I2 --> J1
+  I8 --> J1
+
+  subgraph S10 [10_Handoff]
+    K1[ble_notify_vitals] --> K2[PPG_TRIG_MEASUREMENT_COMPLETE]
+    K2 --> K3[health_sched_to_GLUCOSE]
+    J4 -.-> K4[later_BLE_def4_or_CDC_export]
+  end
+
+  I9 --> K1

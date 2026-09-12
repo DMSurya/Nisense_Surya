@@ -1,0 +1,7 @@
+r
+SetBP 0xAE2
+g
+h
+regs
+q
+

@@ -1,0 +1,149 @@
+# Copyright (c) 2025 NiSense
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  MAX30102 Pulse Oximeter Sensor (2-LED variant: Red + IR only)
+
+  This binding is for the MAX30102, which is identical to MAX30101 except:
+    - Only 2 LEDs (Red and IR) — no Green LED
+    - LED3 (Green) settings are ignored
+    - Slots configured for Green will be auto-disabled
+
+  The sensor communicates over I2C at address 0x57.
+  Part ID is 0x15 (same as MAX30101/MAX30105).
+
+compatible: "maxim,max30102-ppg"
+
+include: [sensor-device.yaml, i2c-device.yaml]
+
+properties:
+  mode:
+    type: string
+    default: "spo2"
+    description: |
+      Operating mode:
+        "hr"    - Heart Rate only (Red LED, 1 channel)
+        "spo2"  - SpO2 measurement (Red + IR LEDs, 2 channels)
+        "multi" - Multi-LED mode (Red + IR only, Green slots ignored)
+    enum:
+      - "hr"
+      - "spo2"
+      - "multi"
+
+  led1-pa:
+    type: int
+    default: 0x40
+    description: |
+      Red LED pulse amplitude (0x00-0xFF).
+      Current = value × 0.2 mA. Default 0x40 = 12.8 mA.
+
+  led2-pa:
+    type: int
+    default: 0x40
+    description: |
+      IR LED pulse amplitude (0x00-0xFF).
+      Current = value × 0.2 mA. Default 0x40 = 12.8 mA.
+
+  led3-pa:
+    type: int
+    default: 0x00
+    description: |
+      Green LED pulse amplitude - IGNORED on MAX30102 (no Green LED).
+      Kept for DT compatibility with MAX30101.
+
+  adc-range:
+    type: int
+    default: 2
+    description: |
+      SpO2 ADC full-scale range:
+        0 = 2048 nA
+        1 = 4096 nA
+        2 = 8192 nA (default)
+        3 = 16384 nA
+    enum: [0, 1, 2, 3]
+
+  sample-rate:
+    type: int
+    default: 0
+    description: |
+      SpO2 sample rate setting (SPO2_CFG SR[4:2]):
+        0 = 50 sps
+        1 = 100 sps
+        2 = 200 sps
+        3 = 400 sps
+        4 = 800 sps
+        5 = 1000 sps
+        6 = 1600 sps
+        7 = 3200 sps
+    enum: [0, 1, 2, 3, 4, 5, 6, 7]
+
+  pulse-width:
+    type: int
+    default: 3
+    description: |
+      LED pulse width / ADC resolution:
+        0 = 69 us  / 15-bit
+        1 = 118 us / 16-bit
+        2 = 215 us / 17-bit
+        3 = 411 us / 18-bit (default, maximum resolution)
+    enum: [0, 1, 2, 3]
+
+  smp-ave:
+    type: int
+    default: 0
+    description: |
+      Hardware sample averaging (FIFO_CFG SMP_AVE[7:5]):
+        0 = 1 (no averaging)
+        1 = 2 samples averaged
+        2 = 4
+        3 = 8
+        4 = 16
+        5-7 = 32
+    enum: [0, 1, 2, 3, 4, 5, 6, 7]
+
+  fifo-rollover:
+    type: boolean
+    description: |
+      Enable FIFO rollover. When enabled, new samples overwrite oldest
+      when FIFO is full instead of discarding new data.
+
+  fifo-a-full:
+    type: int
+    default: 0
+    description: |
+      FIFO almost-full threshold (0-15).
+      Number of empty FIFO slots when A_FULL interrupt triggers.
+    enum: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+
+  slot1:
+    type: int
+    default: 0
+    description: "Multi-LED slot 1 (0=off, 1=Red, 2=IR). Note: 3=Green ignored on MAX30102."
+    enum: [0, 1, 2, 3]
+
+  slot2:
+    type: int
+    default: 0
+    description: "Multi-LED slot 2 (0=off, 1=Red, 2=IR). Note: 3=Green ignored on MAX30102."
+    enum: [0, 1, 2, 3]
+
+  slot3:
+    type: int
+    default: 0
+    description: "Multi-LED slot 3 - IGNORED on MAX30102 (only 2 channels)."
+    enum: [0, 1, 2, 3]
+
+  slot4:
+    type: int
+    default: 0
+    description: "Multi-LED slot 4 - IGNORED on MAX30102 (only 2 channels)."
+    enum: [0, 1, 2, 3]
+
+  sample-rate-hz:
+    type: int
+    default: 50
+    description: |
+      Effective output sample rate in Hz (after hardware averaging).
+      Used by the algorithm subsystem for timing and buffer sizing.
+      Must match the hardware sample-rate + smp-ave combination.
+      Common values: 25, 50, 100.

@@ -1,0 +1,84 @@
+%%{init: {'theme': 'base'}}%%
+%% =============================================================================
+%% RTC DRIVER COMPONENT DIAGRAM
+%% =============================================================================
+%% Purpose: Shows the MCP7940N RTC driver and time management
+%% Scope: Counter API, time sync, alarms, battery backup
+%% Assumptions:
+%%   - MCP7940N with battery backup
+%%   - Zephyr Counter API (not RTC API)
+%%   - Build time used for initial sync if RTC is reset
+%% =============================================================================
+
+graph TB
+    subgraph "Application Layer (src/)"
+        RTCUI[rtc_ui.c<br/>Time Display<br/>Set Time Screen]
+        RTCMgr[rtc.c<br/>Time Manager<br/>Alarm Handler]
+        Timestamper[Timestamp Users<br/>glucose_logger.c<br/>ppg_logger.c]
+    end
+
+    subgraph "Zephyr Counter API"
+        CounterAPI[counter_get_value<br/>counter_set_top_value<br/>counter_set_alarm]
+    end
+
+    subgraph "RTC Driver (Zephyr In-Tree)"
+        MCP7940N[mcp7940n.c<br/>Counter Driver<br/>I2C Interface]
+        
+        subgraph "Features"
+            TimeRW[Time Read/Write<br/>BCD Format<br/>Sec/Min/Hr/Day/Mon/Yr]
+            Alarm[Alarm Support<br/>1-Minute Periodic<br/>Callback]
+            NVRAM[NVRAM<br/>64 Bytes<br/>User Storage]
+            Oscillator[Oscillator Control<br/>ST Bit<br/>32.768kHz Crystal]
+        end
+    end
+
+    subgraph "Hardware"
+        I2C0[I2C0 Bus<br/>400kHz]
+        MCP7940N_IC[MCP7940N IC<br/>0x6F<br/>Battery Backed]
+        Crystal[32.768kHz<br/>Crystal]
+        Battery[Backup Battery<br/>CR2032]
+    end
+
+    subgraph "Time Sync Sources"
+        BuildTime[Build Time<br/>__DATE__ __TIME__<br/>Fallback]
+        BLESync[BLE Time Sync<br/>ble_gatt.c<br/>RTC Trim Char]
+        CloudSync[Cloud Time Sync<br/>NTP via Wi-Fi<br/>Future]
+    end
+
+    %% Application flow
+    RTCUI --> RTCMgr
+    RTCMgr --> CounterAPI
+    Timestamper --> RTCMgr
+
+    %% Counter API to driver
+    CounterAPI --> MCP7940N
+
+    %% Driver features
+    MCP7940N --> TimeRW
+    MCP7940N --> Alarm
+    MCP7940N --> NVRAM
+    MCP7940N --> Oscillator
+
+    %% Hardware
+    MCP7940N --> I2C0
+    I2C0 --> MCP7940N_IC
+    MCP7940N_IC --> Crystal
+    MCP7940N_IC --> Battery
+
+    %% Time sync
+    BuildTime --> RTCMgr
+    BLESync --> RTCMgr
+    CloudSync -.-> RTCMgr
+
+    %% Styling
+    classDef app fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
+    classDef api fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef driver fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef hw fill:#cfd8dc,stroke:#455a64,stroke-width:2px
+    classDef sync fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+
+    class RTCUI,RTCMgr,Timestamper app
+    class CounterAPI api
+    class MCP7940N,TimeRW,Alarm,NVRAM,Oscillator driver
+    class I2C0,MCP7940N_IC,Crystal,Battery hw
+    class BuildTime,BLESync,CloudSync sync

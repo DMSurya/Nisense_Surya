@@ -1,0 +1,4 @@
+# Custom vendor prefixes for NiSense (merged via DTS_ROOT).
+# Format: <vendor-prefix><TAB><Full name>
+
+hcm	AARMS NiSense HCM

@@ -1,0 +1,946 @@
+/*********************************************************************
+*                 (c) SEGGER Microcontroller GmbH                    *
+*                      The Embedded Experts                          *
+*                         www.segger.com                             *
+**********************************************************************
+
+File          : E:/AARMS/HCM/NiSense/Ozone.jdebug
+Created       : 6 Nov 2025 00:18
+Ozone Version : V3.38g
+
+Modified      : Jan 2026 - MCUboot boot chain + RTT debugging support
+
+===============================================================================
+DEBUGGING WORKFLOW:
+===============================================================================
+1. F4 (Download & Reset) - Flashes merged.hex and resets to MCUboot
+2. F5 (Start & Break)    - Run until main() or first breakpoint
+3. Terminal > New Terminal > RTT Channel 0 - View log output
+
+MCUBOOT DEBUGGING:
+- MCUboot: 0x00000000 - 0x0000A000 (40 KB)
+- App:     0x0000A200 - 0x000FA000 (~960 KB)
+- To debug MCUboot itself: File > Open > mcuboot/zephyr/zephyr.elf
+
+HOT KEYS:
+- F4:  Download & Reset
+- F5:  Start & Break (at main)
+- F6:  Step Over
+- F7:  Step Into
+- F8:  Step Out
+- F9:  Toggle Breakpoint
+- F12: Reset
+===============================================================================
+*/
+
+/*********************************************************************
+*
+*       OnProjectLoad
+*
+* Function description
+*   Project load routine. Required.
+*
+**********************************************************************
+*/
+void OnProjectLoad (void) {
+  Edit.SysVar (VAR_RTT_ENABLED, 1);
+  //
+  // Dialog-generated settings
+  //
+  // NOTE: This project file lives in scripts/debug/ozone, so $(ProjectDir)
+  // is NOT the repo root. The repo root is $(ProjectDir)/../../..
+  Project.AddPathSubstitute ("E:/AARMS/HCM/NiSense", "$(ProjectDir)/../../..");
+  Project.AddPathSubstitute ("e:/aarms/hcm/NiSense", "$(ProjectDir)/../../..");
+  Project.SetDevice ("nRF52840_xxAA");
+  Project.SetHostIF ("USB", "1050275963");
+  Project.SetTargetIF ("SWD");
+  Project.SetTIFSpeed ("4 MHz");
+  Project.AddSvdFile ("$(InstallDir)/Config/CPU/Cortex-M4F.svd");
+  //
+  // nRF52840 peripherals SVD for register inspection
+  //
+  // Project.AddSvdFile ("$(ProjectDir)/../../../model/Peripherals/nRF52840.svd");
+  //
+  // User settings - Load application ELF for symbols
+  //
+  File.Open ("$(ProjectDir)/../../../build_sdk_v330/NiSense/zephyr/zephyr.elf");
+  //
+  // Zephyr OS awareness plugin (thread info, kernel objects)
+  //
+  Project.SetOSPlugin("ZephyrPlugin.js");
+  //
+  // RTT Control Block auto-detection (SEGGER RTT)
+  // Note: RTT is configured automatically by Ozone when connecting
+  //
+}
+
+/*********************************************************************
+*
+*       OnStartupComplete
+*
+* Function description
+*   Called when program execution has reached/passed
+*   the startup completion point. Optional.
+*   
+*   Automatically flash Resource store after application startup.
+*
+**********************************************************************
+*/
+void OnStartupComplete (void) {
+  Util.Log("");
+  Util.Log("=== STARTUP COMPLETE ===");
+  Util.Log("Device is booting from MCUboot + Application");
+  Util.Log("");
+  Util.Log("Auto-flashing Resource store to external QSPI...");
+  Util.Log("NOTE: XIP only needs to be flashed once after first build.");
+  // FlashResource();
+}
+
+/*********************************************************************
+*
+*      TargetReset
+*
+* Function description
+*   Replaces the default target device reset routine. Optional.
+*
+* Notes
+*   This example demonstrates the usage when
+*   debugging an application in RAM on a Cortex-M target device.
+*
+**********************************************************************
+*/
+//void TargetReset (void) {
+//
+//  unsigned int SP;
+//  unsigned int PC;
+//  unsigned int VectorTableAddr;
+//
+//  VectorTableAddr = Elf.GetBaseAddr();
+//  //
+//  // Set up initial stack pointer
+//  //
+//  if (VectorTableAddr != 0xFFFFFFFF) {
+//    SP = Target.ReadU32(VectorTableAddr);
+//    Target.SetReg("SP", SP);
+//  }
+//  //
+//  // Set up entry point PC
+//  //
+//  PC = Elf.GetEntryPointPC();
+//
+//  if (PC != 0xFFFFFFFF) {
+//    Target.SetReg("PC", PC);
+//  } else if (VectorTableAddr != 0xFFFFFFFF) {
+//    PC = Target.ReadU32(VectorTableAddr + 4);
+//    Target.SetReg("PC", PC);
+//  } else {
+//    Util.Error("Project file error: failed to set entry point PC", 1);
+//  }
+//}
+
+/*********************************************************************
+*
+*       BeforeTargetReset
+*
+* Function description
+*   Event handler routine. Optional.
+*
+**********************************************************************
+*/
+//void BeforeTargetReset (void) {
+//}
+
+/*********************************************************************
+*
+*       AfterTargetReset
+*
+* Function description
+*   Event handler routine. Optional.
+*   The default implementation initializes SP and PC to reset values.
+*
+*   MODIFIED: Now boots from MCUboot (address 0x0) instead of
+*   directly jumping to the application.
+**
+**********************************************************************
+*/
+void AfterTargetReset (void) {
+  //
+  // Boot from MCUboot at address 0x0 (proper boot chain)
+  // MCUboot will validate and jump to the application
+  //
+  _SetupTarget_MCUboot();
+}
+
+/*********************************************************************
+*
+*       DebugStart
+*
+* Function description
+*   Replaces the default debug session startup routine. Optional.
+*
+**********************************************************************
+*/
+//void DebugStart (void) {
+//}
+
+/*********************************************************************
+*
+*       TargetConnect
+*
+* Function description
+*   Replaces the default target IF connection routine. Optional.
+*
+**********************************************************************
+*/
+//void TargetConnect (void) {
+//}
+
+/*********************************************************************
+*
+*       BeforeTargetConnect
+*
+* Function description
+*   Event handler routine. Optional.
+*
+**********************************************************************
+*/
+//void BeforeTargetConnect (void) {
+//}
+
+/*********************************************************************
+*
+*       AfterTargetConnect
+*
+* Function description
+*   Event handler routine. Optional.
+*
+**********************************************************************
+*/
+//void AfterTargetConnect (void) {
+//}
+
+/*********************************************************************
+*
+*       TargetDownload
+*
+* Function description
+*   Replaces the default program download routine.
+*   Downloads merged.hex (MCUboot + App) for full boot chain.
+*
+**********************************************************************
+*/
+void TargetDownload (void) {
+  //
+  // Flash the merged hex file containing both MCUboot and application
+  // This ensures proper MCUboot header and signature are in place
+  //
+  Util.Log("Downloading merged.hex (MCUboot + Application)...");
+  Target.LoadMemory("$(ProjectDir)/../../../build_sdk_v330/merged_raytac_mdbt50q_db_40_nrf52840.hex", 0x00000000);
+  // Target.LoadMemory("$(ProjectDir)/../../../build_sdk_v330/merged.hex", 0x00000000);
+  Util.Log("Download complete.");
+}
+
+/*********************************************************************
+*
+*       BeforeTargetDownload
+*
+* Function description
+*   Event handler routine. Optional.
+*
+**********************************************************************
+*/
+//void BeforeTargetDownload (void) {
+//}
+
+/*********************************************************************
+*
+*      AfterTargetDownload
+*
+* Function description
+*   Event handler routine. Optional.
+*   The default implementation initializes SP and PC to reset values.
+*
+*   MODIFIED: Now boots from MCUboot after download.
+*
+**********************************************************************
+*/
+void AfterTargetDownload (void) {
+  //
+  // Boot from MCUboot at address 0x0 (proper boot chain)
+  //
+  _SetupTarget_MCUboot();
+}
+
+/*********************************************************************
+*
+*       BeforeTargetDisconnect
+*
+* Function description
+*   Event handler routine. Optional.
+*
+**********************************************************************
+*/
+//void BeforeTargetDisconnect (void) {
+//}
+
+/*********************************************************************
+*
+*       AfterTargetDisconnect
+*
+* Function description
+*   Event handler routine. Optional.
+*
+**********************************************************************
+*/
+//void AfterTargetDisconnect (void) {
+//}
+
+/*********************************************************************
+*
+*       AfterTargetHalt
+*
+* Function description
+*   Event handler routine. Optional.
+*
+**********************************************************************
+*/
+//void AfterTargetHalt (void) {
+//}
+
+/*********************************************************************
+*
+*       BeforeTargetResume
+*
+* Function description
+*   Event handler routine. Optional.
+*
+**********************************************************************
+*/
+//void BeforeTargetResume (void) {
+//}
+
+/*********************************************************************
+*
+*       OnSnapshotLoad
+*
+* Function description
+*   Called upon loading a snapshot. Optional.
+*
+* Additional information
+*   This function is used to restore the target state in cases
+*   where values cannot simply be written to the target.
+*   Typical use: GPIO clock needs to be enabled, before
+*   GPIO is configured.
+*
+**********************************************************************
+*/
+//void OnSnapshotLoad (void) {
+//}
+
+/*********************************************************************
+*
+*       OnSnapshotSave
+*
+* Function description
+*   Called upon saving a snapshot. Optional.
+*
+* Additional information
+*   This function is usually used to save values of the target
+*   state which can either not be trivially read,
+*   or need to be restored in a specific way or order.
+*   Typically use: Memory Mapped Registers,
+*   such as PLL and GPIO configuration.
+*
+**********************************************************************
+*/
+//void OnSnapshotSave (void) {
+//}
+
+/*********************************************************************
+*
+*       OnError
+*
+* Function description
+*   Called when an error ocurred. Optional.
+*
+**********************************************************************
+*/
+//void OnError (void) {
+//}
+
+/*********************************************************************
+*
+*       AfterProjectLoad
+*
+* Function description
+*   After Project load routine. Optional.
+*
+**********************************************************************
+*/
+void AfterProjectLoad (void) {
+  //
+  // Log project info
+  //
+  Util.Log("============================================");
+  Util.Log("nRF52840 Wearable Health Monitor - Ozone Debug");
+  Util.Log("============================================");
+  Util.Log("Memory Map:");
+  Util.Log("  MCUboot:  0x00000000 - 0x0000A000 (40 KB)");
+  Util.Log("  App:      0x0000A200 - 0x000FA000 (~960 KB)");
+  Util.Log("  NVS:      0x000FA000 - 0x00100000 (24 KB)");
+  Util.Log("");
+  Util.Log("RTT: Terminal > New Terminal > RTT Channel 0");
+  Util.Log("============================================");
+  Util.Log("");
+  Util.Log("QUICK TIPS:");
+  Util.Log("  - To flash Resource store: .\\scripts\\flash\\flash_resource.ps1");
+  Util.Log("");
+  //
+  // Set initial breakpoint at main() for application debugging
+  //
+  // Break.SetOnSrc("main.c:136");
+  // Util.Log("Breakpoint set at main()");
+}
+
+/*********************************************************************
+*
+*       OnDebugStartBreakSymbolReached
+*
+* Function description
+*   Called when program execution has reached/passed
+*   the symbol to be breaked at during debug start. Optional.
+*
+**********************************************************************
+*/
+//void OnDebugStartBreakSymReached (void) {
+//}
+
+/*********************************************************************
+*
+*       _SetupTarget
+*
+* Function description
+*   Setup the target to boot directly into the application.
+*   LEGACY: Use _SetupTarget_MCUboot() for proper boot chain.
+*
+*   Auto-generated function. May be overridden by Ozone.
+*
+**********************************************************************
+*/
+void _SetupTarget(void) {
+  unsigned int SP;
+  unsigned int PC;
+  unsigned int VectorTableAddr;
+
+  VectorTableAddr = Elf.GetBaseAddr();
+  //
+  // Set up initial stack pointer
+  //
+  SP = Target.ReadU32(VectorTableAddr);
+  if (SP != 0xFFFFFFFF) {
+    Target.SetReg("SP", SP);
+  }
+  //
+  // Set up entry point PC
+  //
+  PC = Elf.GetEntryPointPC();
+  if (PC != 0xFFFFFFFF) {
+    Target.SetReg("PC", PC);
+  } else {
+    Util.Error("Project script error: failed to set up entry point PC", 1);
+  }
+}
+
+/*********************************************************************
+*
+*       _SetupTarget_MCUboot
+*
+* Function description
+*   Setup the target to boot from MCUboot (proper boot chain).
+*   MCUboot is located at address 0x0 and will validate the app
+*   image before jumping to it.
+*
+*   This allows debugging the full boot sequence:
+*   MCUboot → Image validation → Jump to application
+*
+**********************************************************************
+*/
+void _SetupTarget_MCUboot(void) {
+  unsigned int SP;
+  unsigned int PC;
+  unsigned int MCUbootAddr;
+
+  //
+  // MCUboot is at address 0x0 (start of internal flash)
+  //
+  MCUbootAddr = 0x00000000;
+
+  //
+  // Read SP from MCUboot vector table (first word at 0x0)
+  //
+  SP = Target.ReadU32(MCUbootAddr);
+  if (SP == 0xFFFFFFFF || SP == 0x00000000) {
+    Util.Error("Failed to read MCUboot stack pointer from 0x0", 1);
+  } else {
+    Target.SetReg("SP", SP);
+    Util.LogHex("MCUboot SP: 0x", SP);
+
+    //
+    // Read Reset Handler address from MCUboot vector table (second word at 0x4)
+    //
+    PC = Target.ReadU32(MCUbootAddr + 4);
+    if (PC == 0xFFFFFFFF || PC == 0x00000000) {
+      Util.Error("Failed to read MCUboot reset vector from 0x4", 1);
+    } else {
+      Target.SetReg("PC", PC);
+      Util.LogHex("MCUboot Reset Handler: 0x", PC);
+      Util.Log("Booting from MCUboot...");
+    }
+  }
+}
+
+/*********************************************************************
+*
+*       BootDirectToApp
+*
+* Function description
+*   Skip MCUboot and boot directly into the application.
+*   Useful for faster iteration when not testing boot chain.
+*   Call from Ozone console: exec BootDirectToApp()
+*
+**********************************************************************
+*/
+void BootDirectToApp(void) {
+  unsigned int SP;
+  unsigned int PC;
+  unsigned int AppAddr;
+
+  //
+  // Application vector table is at 0xA200 (after MCUboot header)
+  //
+  AppAddr = 0x0000A200;
+
+  SP = Target.ReadU32(AppAddr);
+  PC = Target.ReadU32(AppAddr + 4);
+
+  if (SP != 0xFFFFFFFF && PC != 0xFFFFFFFF) {
+    Target.SetReg("SP", SP);
+    Target.SetReg("PC", PC);
+    Util.Log("Direct boot to app: SP=0x" + Util.IntToHex(SP, 8) + ", PC=0x" + Util.IntToHex(PC, 8));
+  } else {
+    Util.Error("Failed to read app vectors at 0xA200", 1);
+  }
+}
+
+/*********************************************************************
+*
+*       ShowMemoryMap
+*
+* Function description
+*   Display the memory map in the log.
+*   Call from Ozone console: exec ShowMemoryMap()
+*
+**********************************************************************
+*/
+void ShowMemoryMap(void) {
+  Util.Log("================ MEMORY MAP ================");
+  Util.Log("INTERNAL FLASH (1 MB):");
+  Util.Log("  0x00000000 - 0x0000A000: MCUboot (40 KB)");
+  Util.Log("  0x0000A000 - 0x0000A200: MCUboot Header (512 B)");
+  Util.Log("  0x0000A200 - 0x000EFBF8: Application (~918 KB)");
+  Util.Log("  0x000F0000 - 0x000FA000: mcuboot_primary_app (Image 0)");
+  Util.Log("  0x000FA000 - 0x00100000: NVS Storage (24 KB)");
+  Util.Log("");
+  Util.Log("SRAM (256 KB):");
+  Util.Log("  0x20000000 - 0x20040000: RAM");
+  Util.Log("");
+  Util.Log("EXTERNAL FLASH (8 MB QSPI @ 0x12000000 XIP base):");
+  Util.Log("  0x000000 - 0x0F2000: mcuboot_secondary (968 KB) - App OTA");
+  Util.Log("  0x0F2000 - 0x0F6000: mcuboot_scratch (16 KB)");
+  Util.Log("  0x0F6000 - 0x176000: resource-primary (512 KB) - QSPI mmap");
+  Util.Log("  0x176000 - 0x1F6000: resource-secondary (512 KB) - Resource OTA");
+  Util.Log("  0x1F6000 - 0x206000: calibration_model (64 KB)");
+  Util.Log("  0x206000 - 0x216000: storage_nvs (64 KB)");
+  Util.Log("  0x216000 - 0x800000: userdata_storage (6.0 MB) - FAT32/MSC");
+  Util.Log("");
+  Util.Log("XIP MEMORY-MAPPED ACCESS:");
+  Util.Log("  XIP Base: 0x12000000");
+  Util.Log("  resource: 0x120F6000 (0x12000000 + 0x0F6000)");;
+  Util.Log("=============================================");
+}
+
+/*********************************************************************
+*
+*       FlashResource
+*
+* Function description
+*   Flash Resource store binary to external QSPI flash.
+*   
+*   *** DEPRECATED - Use PowerShell script instead: ***
+*   .\scripts\flash\flash_resource.ps1
+*   
+*   The PowerShell script handles QSPI pin mapping correctly and
+*   shows progress with timestamps.
+*
+**********************************************************************
+*/
+void FlashResource(void) {
+  Util.Log("============================================");
+  Util.Log("  FlashResource()");
+  Util.Log("");
+  Util.Log("  Use PowerShell script instead:");
+  Util.Log("  .\\scripts\\flash\\flash_resource.ps1");
+  Util.Log("============================================");
+}
+
+/*********************************************************************
+*
+*       FlashCalibration
+*
+* Function description
+*   Flash calibration data to external QSPI flash.
+*   Call from Ozone console: exec FlashCalibration()
+*   
+*   Expected binary: build_sdk_v330/calibration.bin
+*   Target offset: 0x1F6000 (calibration partition)
+*
+* WARNING: 
+*   Calibration data is production-locked and should only
+*   be programmed once during manufacturing!
+*
+**********************************************************************
+*/
+void FlashCalibration(void) {
+  Util.Log("============ FLASH CALIBRATION =============");
+  Util.Log("Binary:  $(ProjectDir)/../../../build_sdk_v330/calibration.bin");
+  Util.Log("Target:  External QSPI flash @ 0x1F6000");
+  Util.Log("");
+  Util.Log("WARNING: Calibration data is production-locked!");
+  Util.Log("         This should only be done during manufacturing.");
+  Util.Log("");
+  
+  Target.Halt();
+  
+  Util.Log("Programming calibration partition...");
+  Exec.Command("loadfile $(ProjectDir)/../../../build_sdk_v330/calibration.bin 0x1F6000 QSPI");
+  
+  Util.Log("Calibration data programmed.");
+  Util.Log("=============================================");
+}
+
+/*********************************************************************
+*
+*       VerifyResource
+*
+* Function description
+*   Verify Resource store is accessible via QSPI mmap.
+*   Call from Ozone console: exec VerifyResource()
+*
+**********************************************************************
+*/
+void VerifyResource(void) {
+  unsigned int magic;
+  unsigned int version;
+  unsigned int asset_count;
+  unsigned int crc;
+  
+  Util.Log("============ VERIFY RESOURCE STORE =============");
+  Util.Log("Reading from XIP address 0x120F4000...");
+  
+  //
+  // Read XIP partition header fields
+  // See include/resource.h for structure definition
+  //
+  magic = Target.ReadU32(0x120F4000);        // offset 0: magic
+  version = Target.ReadU32(0x120F4000 + 4);  // offset 4: version  
+  asset_count = Target.ReadU32(0x120F4000 + 8);  // offset 8: asset_count
+  crc = Target.ReadU32(0x120F4000 + 12);     // offset 12: crc32
+  
+  Util.Log("");
+  Util.Log("XIP Partition Header:");
+  Util.Log("  Magic:       0x" + Util.IntToHex(magic, 8) + " (expect 0x58495041 = 'XIPA')");
+  Util.Log("  Version:     " + version);
+  Util.Log("  Asset Count: " + asset_count);
+  Util.Log("  CRC32:       0x" + Util.IntToHex(crc, 8));
+  Util.Log("");
+  
+  if (magic == 0x58495041) {
+    Util.Log("Resource header VALID - assets accessible via QSPI mmap!");
+  } else if (magic == 0xFFFFFFFF) {
+    Util.Log("XIP partition is ERASED (0xFFFFFFFF) - no assets flashed");
+  } else {
+    Util.Log("XIP header INVALID - may be corrupted or wrong format");
+  }
+  
+  Util.Log("=============================================");
+}
+
+/*********************************************************************
+*
+*       CheckBootStatus
+*
+* Function description
+*   Check MCUboot and application boot status.
+*   Call from Ozone console: exec CheckBootStatus()
+*
+**********************************************************************
+*/
+void CheckBootStatus(void) {
+  unsigned int mcuboot_sp;
+  unsigned int mcuboot_pc;
+  unsigned int app_sp;
+  unsigned int app_pc;
+  unsigned int current_pc;
+
+  mcuboot_sp = Target.ReadU32(0x00000000);
+  mcuboot_pc = Target.ReadU32(0x00000004);
+  app_sp = Target.ReadU32(0x0000A200);
+  app_pc = Target.ReadU32(0x0000A204);
+  current_pc = Target.GetReg("PC");
+
+  Util.Log("============= BOOT STATUS =============");
+  Util.Log("MCUboot Vector Table (0x0):");
+  Util.Log("  SP: 0x" + Util.IntToHex(mcuboot_sp, 8));
+  Util.Log("  PC: 0x" + Util.IntToHex(mcuboot_pc, 8));
+  Util.Log("");
+  Util.Log("App Vector Table (0xA200):");
+  Util.Log("  SP: 0x" + Util.IntToHex(app_sp, 8));
+  Util.Log("  PC: 0x" + Util.IntToHex(app_pc, 8));
+  Util.Log("");
+  Util.Log("Current PC: 0x" + Util.IntToHex(current_pc, 8));
+  
+  if (current_pc < 0x0000A000) {
+    Util.Log("Status: Running in MCUboot");
+  } else if (current_pc >= 0x0000A200 && current_pc < 0x000FA000) {
+    Util.Log("Status: Running in Application");
+  } else {
+    Util.Log("Status: Unknown region");
+  }
+  Util.Log("=======================================");
+}
+
+/*********************************************************************
+*
+*       AnalyzeFault
+*
+* Function description
+*   Comprehensive fault analysis for HardFault/BusFault/etc.
+*   Call from Ozone console when stopped on fault: exec AnalyzeFault()
+*
+*   ARM Cortex-M4 Fault Status Registers:
+*   - CFSR (0xE000ED28): Combined Fault Status Register
+*     - MMFSR (bits 7:0): MemManage Fault Status
+*     - BFSR (bits 15:8): BusFault Status
+*     - UFSR (bits 31:16): UsageFault Status
+*   - HFSR (0xE000ED2C): HardFault Status Register
+*   - DFSR (0xE000ED30): Debug Fault Status Register
+*   - MMFAR (0xE000ED34): MemManage Fault Address
+*   - BFAR (0xE000ED38): BusFault Address
+*
+**********************************************************************
+*/
+void AnalyzeFault(void) {
+  unsigned int pc;
+  unsigned int lr;
+  unsigned int sp;
+  unsigned int cfsr;
+  unsigned int hfsr;
+  unsigned int mmfar;
+  unsigned int bfar;
+  unsigned int vtor;
+  unsigned int psp;
+  unsigned int msp;
+  unsigned int control;
+  unsigned int primask;
+
+  // Core registers
+  pc = Target.GetReg("PC");
+  lr = Target.GetReg("LR");
+  sp = Target.GetReg("SP");
+  psp = Target.GetReg("PSP");
+  msp = Target.GetReg("MSP");
+  control = Target.GetReg("CONTROL");
+  primask = Target.GetReg("PRIMASK");
+
+  // Fault status registers
+  cfsr = Target.ReadU32(0xE000ED28);   // CFSR
+  hfsr = Target.ReadU32(0xE000ED2C);   // HFSR
+  mmfar = Target.ReadU32(0xE000ED34);  // MMFAR
+  bfar = Target.ReadU32(0xE000ED38);   // BFAR
+  vtor = Target.ReadU32(0xE000ED08);   // VTOR (Vector Table Offset)
+
+  Util.Log("=============== FAULT ANALYSIS ===============");
+  Util.Log("");
+  
+  Util.Log("CORE REGISTERS:");
+  Util.Log("  PC (Program Counter): 0x" + Util.IntToHex(pc, 8));
+  Util.Log("  LR (Link Register):   0x" + Util.IntToHex(lr, 8));
+  Util.Log("  SP (Stack Pointer):   0x" + Util.IntToHex(sp, 8));
+  Util.Log("  MSP (Main SP):        0x" + Util.IntToHex(msp, 8));
+  Util.Log("  PSP (Process SP):     0x" + Util.IntToHex(psp, 8));
+  Util.Log("  CONTROL:              0x" + Util.IntToHex(control, 8));
+  Util.Log("  PRIMASK:              0x" + Util.IntToHex(primask, 8));
+  Util.Log("  VTOR:                 0x" + Util.IntToHex(vtor, 8));
+  Util.Log("");
+
+  // Determine execution context
+  if (pc < 0x0000A000) {
+    Util.Log("CONTEXT: PC is in MCUboot region (0x0 - 0xA000)");
+  } else if (pc >= 0x0000A200 && pc < 0x000FA000) {
+    Util.Log("CONTEXT: PC is in Application region (0xA200 - 0xFA000)");
+  } else if (pc >= 0xE0000000) {
+    Util.Log("CONTEXT: PC is in System/Debug region");
+  } else {
+    Util.Log("CONTEXT: PC is in UNKNOWN region - possible corruption!");
+  }
+  Util.Log("");
+
+  // VTOR check
+  if (vtor == 0x00000000) {
+    Util.Log("VTOR WARNING: Vector table at 0x0 (MCUboot)");
+    Util.Log("  This is WRONG if app is running - should be 0xA200!");
+  } else if (vtor == 0x0000A200) {
+    Util.Log("VTOR OK: Vector table at 0xA200 (Application)");
+  }
+  Util.Log("");
+
+  Util.Log("FAULT STATUS REGISTERS:");
+  Util.Log("  CFSR: 0x" + Util.IntToHex(cfsr, 8));
+  Util.Log("  HFSR: 0x" + Util.IntToHex(hfsr, 8));
+  Util.Log("  BFAR: 0x" + Util.IntToHex(bfar, 8));
+  Util.Log("  MMFAR: 0x" + Util.IntToHex(mmfar, 8));
+  Util.Log("");
+
+  // Decode HFSR
+  Util.Log("HFSR DECODE:");
+  if (hfsr & 0x40000000) {
+    Util.Log("  [FORCED] - Escalated from configurable fault");
+  }
+  if (hfsr & 0x00000002) {
+    Util.Log("  [VECTTBL] - Vector table read error");
+  }
+  if (hfsr & 0x80000000) {
+    Util.Log("  [DEBUGEVT] - Debug event occurred");
+  }
+  Util.Log("");
+
+  // Decode CFSR - BusFault Status (bits 15:8)
+  Util.Log("BUSFAULT STATUS (BFSR):");
+  if (cfsr & 0x8000) {
+    Util.Log("  [BFARVALID] - BFAR contains valid address: 0x" + Util.IntToHex(bfar, 8));
+  }
+  if (cfsr & 0x1000) {
+    Util.Log("  [LSPERR] - Fault during lazy FP state preservation");
+  }
+  if (cfsr & 0x0800) {
+    Util.Log("  [STKERR] - Stack error during exception entry");
+  }
+  if (cfsr & 0x0400) {
+    Util.Log("  [UNSTKERR] - Stack error during exception return");
+  }
+  if (cfsr & 0x0200) {
+    Util.Log("  [IMPRECISERR] - Imprecise data access violation");
+  }
+  if (cfsr & 0x0100) {
+    Util.Log("  [PRECISERR] - Precise data access violation");
+  }
+  if (cfsr & 0x0100) {
+    Util.Log("    Faulting address (if BFARVALID): 0x" + Util.IntToHex(bfar, 8));
+  }
+  Util.Log("");
+
+  // Decode CFSR - UsageFault Status (bits 31:16)
+  Util.Log("USAGEFAULT STATUS (UFSR):");
+  if (cfsr & 0x02000000) {
+    Util.Log("  [DIVBYZERO] - Division by zero");
+  }
+  if (cfsr & 0x01000000) {
+    Util.Log("  [UNALIGNED] - Unaligned access");
+  }
+  if (cfsr & 0x00080000) {
+    Util.Log("  [NOCP] - No coprocessor");
+  }
+  if (cfsr & 0x00040000) {
+    Util.Log("  [INVPC] - Invalid PC load");
+  }
+  if (cfsr & 0x00020000) {
+    Util.Log("  [INVSTATE] - Invalid state (Thumb bit)");
+  }
+  if (cfsr & 0x00010000) {
+    Util.Log("  [UNDEFINSTR] - Undefined instruction");
+  }
+  Util.Log("");
+
+  // Decode CFSR - MemManage Fault Status (bits 7:0)
+  Util.Log("MEMMANAGE STATUS (MMFSR):");
+  if (cfsr & 0x80) {
+    Util.Log("  [MMARVALID] - MMFAR contains valid address: 0x" + Util.IntToHex(mmfar, 8));
+  }
+  if (cfsr & 0x20) {
+    Util.Log("  [MLSPERR] - Lazy FP state preservation fault");
+  }
+  if (cfsr & 0x10) {
+    Util.Log("  [MSTKERR] - Stack error on exception entry");
+  }
+  if (cfsr & 0x08) {
+    Util.Log("  [MUNSTKERR] - Stack error on exception return");
+  }
+  if (cfsr & 0x02) {
+    Util.Log("  [DACCVIOL] - Data access violation");
+  }
+  if (cfsr & 0x01) {
+    Util.Log("  [IACCVIOL] - Instruction access violation");
+  }
+  Util.Log("");
+
+  // Examine stacked registers
+  Util.Log("EXCEPTION STACK FRAME (at SP):");
+  Util.Log("  R0:  0x" + Util.IntToHex(Target.ReadU32(sp + 0), 8));
+  Util.Log("  R1:  0x" + Util.IntToHex(Target.ReadU32(sp + 4), 8));
+  Util.Log("  R2:  0x" + Util.IntToHex(Target.ReadU32(sp + 8), 8));
+  Util.Log("  R3:  0x" + Util.IntToHex(Target.ReadU32(sp + 12), 8));
+  Util.Log("  R12: 0x" + Util.IntToHex(Target.ReadU32(sp + 16), 8));
+  Util.Log("  LR:  0x" + Util.IntToHex(Target.ReadU32(sp + 20), 8) + " (Return address)");
+  Util.Log("  PC:  0x" + Util.IntToHex(Target.ReadU32(sp + 24), 8) + " (Faulting PC)");
+  Util.Log("  xPSR: 0x" + Util.IntToHex(Target.ReadU32(sp + 28), 8));
+  Util.Log("");
+
+  // Check if faulting PC is in MCUboot or App
+  unsigned int faulting_pc = Target.ReadU32(sp + 24);
+  if (faulting_pc < 0x0000A000) {
+    Util.Log("*** FAULTING PC is in MCUboot region! ***");
+    Util.Log("    This is unexpected if app should be running.");
+    Util.Log("    Possible causes:");
+    Util.Log("    - VTOR not updated to app vector table");
+    Util.Log("    - Stack corruption with MCUboot return address");
+    Util.Log("    - Function pointer corruption");
+  }
+
+  Util.Log("==============================================");
+}
+
+/*********************************************************************
+*
+*       CheckVTOR
+*
+* Function description
+*   Quick check of VTOR register to see which vector table is active.
+*   Call from Ozone console: exec CheckVTOR()
+*
+**********************************************************************
+*/
+void CheckVTOR(void) {
+  unsigned int vtor = Target.ReadU32(0xE000ED08);
+  
+  Util.Log("VTOR (Vector Table Offset): 0x" + Util.IntToHex(vtor, 8));
+  
+  if (vtor == 0x00000000) {
+    Util.Log("  -> MCUboot vector table (address 0x0)");
+    Util.Log("  WARNING: If app is running, this should be 0xA200!");
+  } else if (vtor == 0x0000A200) {
+    Util.Log("  -> Application vector table (address 0xA200)");
+    Util.Log("  This is correct for app execution.");
+  } else {
+    Util.Log("  -> UNKNOWN vector table location!");
+  }
+}

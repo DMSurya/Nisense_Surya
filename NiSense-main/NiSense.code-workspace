@@ -1,0 +1,22 @@
+{
+  "folders": [
+    {
+      "name": "Firmware (NiSense)",
+      "path": "."
+    },
+    {
+      "name": "HCM PC",
+      "path": "apps/pc"
+    },
+    {
+      "name": "HCM Mobile",
+      "path": "apps/mobile"
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/build_sdk_v330": true,
+      "**/build": true
+    }
+  }
+}

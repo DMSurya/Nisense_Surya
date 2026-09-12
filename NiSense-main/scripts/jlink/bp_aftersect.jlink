@@ -1,0 +1,8 @@
+r
+SetBP 0x6DF6
+g
+Sleep 3500
+h
+regs
+q
+

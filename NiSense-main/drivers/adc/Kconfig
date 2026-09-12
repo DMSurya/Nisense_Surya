@@ -1,0 +1,23 @@
+if ADC
+
+config ADC_MAX20360
+	bool "Maxim MAX20360 internal SAR ADC"
+	default y
+	depends on DT_HAS_MAXIM_MAX20360_ADC_ENABLED
+	depends on I2C && REGULATOR_MAX20360
+	help
+	  Enable driver for the SAR ADC integrated in the Maxim MAX20360 PMIC
+	  (haptic/ADC register block, I2C 7-bit address 0x50).  Provides rail
+	  measurements (BAT, SYS, bucks, LDOs, ISET, VHDIN) through the
+	  standard Zephyr ADC API.  Rail selection uses the IVMON multiplexer
+	  owned by the MAX20360 regulator driver.
+
+config ADC_MAX20360_INIT_PRIORITY
+	int "MAX20360 ADC initialization priority"
+	default 76
+	depends on ADC_MAX20360
+	help
+	  Initialization priority of the MAX20360 ADC device.  Must be greater
+	  than the MAX20360 parent PMIC (74) and child regulators (75).
+
+endif # ADC

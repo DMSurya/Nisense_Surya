@@ -1,0 +1,10 @@
+/* Bind Zephyr shell UART to USB CDC-ACM VCOM.
+ * Included from the board overlay. Shell backend is compiled only when
+ * APP_FEATURE_SHELL merges conf/features/shell.conf.
+ * Root common deletes zephyr,shell-uart; re-bind it here.
+ */
+/ {
+	chosen {
+		zephyr,shell-uart = &nisense_cdc_acm_uart;
+	};
+};

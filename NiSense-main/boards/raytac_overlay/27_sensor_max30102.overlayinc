@@ -1,0 +1,22 @@
+/* Sensor group: MAX30102 PPG (Pulse SKU endpoint; Watch boards leave chip absent)
+ *
+ * Hardware sample-rate enum 0 = 50 sps; smp-ave=1 (2×) → effective 25 Hz to
+ * match CONFIG_PPG_ALGO_SAMPLE_RATE and Watch RAW cadence.
+ */
+&i2c0 {
+	max30102: max30102@57 {
+		compatible = "maxim,max30102-ppg";
+		reg = <0x57>;
+		status = "okay";
+		mode = "spo2";
+		led1-pa = <0x40>;
+		led2-pa = <0x40>;
+		adc-range = <2>;
+		sample-rate = <0>;
+		pulse-width = <3>;
+		smp-ave = <1>;
+		sample-rate-hz = <25>;
+		fifo-rollover;
+		fifo-a-full = <0>;
+	};
+};

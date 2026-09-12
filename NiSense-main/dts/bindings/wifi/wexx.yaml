@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: Apache-2.0
+# Device tree binding for WExx Wi-Fi Module
+
+description: |
+  WE10/WE20D UART-controlled Wi-Fi module with ASCII AT command interface.
+  Supports Wi-Fi STA/AP modes, TCP/UDP sockets, HTTP, MQTT, and WebSocket.
+
+compatible: "wexx"
+
+include: base.yaml
+
+properties:
+  uart:
+    type: phandle
+    required: true
+    description: |
+      UART device phandle that the Wi-Fi module is connected to.
+
+  enable-gpios:
+    type: phandle-array
+    description: |
+      GPIO connected to CHIP_EN pin of the module.
+      Low = OFF, High = ON. Internally pulled UP on module.
+
+  current-speed:
+    type: int
+    default: 38400
+    description: |
+      UART baud rate. Default is 38400.
+      Supported values: 2400, 4800, 9600, 19200, 38400, 57600, 115200, 921600, 1152000
+
+  hw-flow-control:
+    type: boolean
+    description: |
+      Enable RTS/CTS hardware flow control.
+      Default is disabled.
+
+  reset-delay-ms:
+    type: int
+    default: 100
+    description: |
+      Delay in milliseconds after enabling chip before sending commands.

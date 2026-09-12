@@ -1,0 +1,8 @@
+r
+h
+erase
+loadfile build_sdk_v300/merged.hex
+r
+g
+q
+

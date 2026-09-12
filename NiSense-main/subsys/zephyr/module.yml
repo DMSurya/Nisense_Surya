@@ -1,0 +1,5 @@
+# Zephyr module metadata for out-of-tree subsystems
+name: ppg_subsystems
+build:
+  cmake: .
+  kconfig: Kconfig

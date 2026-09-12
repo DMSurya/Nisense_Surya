@@ -1,0 +1,8 @@
+/* Sensor group: MAX30205 pulse temperature */
+&i2c0 {
+	max30205: max30205@48 {
+		compatible = "maxim,max30208";
+		reg = <0x48>;
+		status = "okay";
+	};
+};

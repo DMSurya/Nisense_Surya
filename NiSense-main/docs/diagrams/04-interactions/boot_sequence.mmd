@@ -1,0 +1,30 @@
+%%{init: {'theme': 'base'}}%%
+%% Boot sequence — 2026-07-29 (Resource + Model stores, early product_hw_detect)
+
+sequenceDiagram
+    participant HW as Hardware
+    participant Boot as MCUboot
+    participant Kernel as Zephyr
+    participant App as main
+    participant Det as product_hw_detect
+    participant Res as Resource_AB
+    participant Mod as Model_AB
+    participant Rec as record_store
+    participant UI as LVGL
+
+    HW->>Boot: Reset
+    Boot->>Boot: Validate_slot
+    Boot->>Kernel: Jump_app
+    Kernel->>App: main
+    App->>App: power_init
+    App->>Det: product_hw_detect
+    Det-->>App: WATCH_or_PULSE
+    App->>App: HW_build_FW_info
+    App->>App: i2c_scan
+    App->>App: QSPI_mmap_enable
+    App->>Res: resource_init_CRC
+    App->>Mod: model_pack_CRC_SKU_entry
+    App->>App: calibration_LED_buzzer
+    App->>UI: ui_init
+    App->>Rec: record_store_init
+    Note over App,UI: Ready_measure_and_BLE

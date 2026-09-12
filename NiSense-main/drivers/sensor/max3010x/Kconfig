@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config MAX3010X_PPG
+	bool "MAX3010x PPG sensor (unified driver for MAX30101/02/05)"
+	default y
+	depends on I2C && SENSOR
+	help
+	  Unified MAX3010x pulse oximeter/heart-rate sensor driver supporting:
+	    - MAX30101: 3 LEDs (Red + IR + Green)
+	    - MAX30102: 2 LEDs (Red + IR only)
+	    - MAX30105: 3 LEDs (Red + IR + Green, particle sensor variant)
+
+	  The variant is determined by the device tree compatible string:
+	    "maxim,max30101-ppg" for MAX30101
+	    "maxim,max30102-ppg" for MAX30102
+	    "maxim,max30105-ppg" for MAX30105
+
+	  Features:
+	  - Proper FIFO drain (reads all available samples per fetch)
+	  - Runtime LED current configuration via sensor_attr_set()
+	  - Shutdown/wakeup power management via sensor API
+	  - FIFO overflow detection and recovery
+	  - Returns -EAGAIN when no new data available
+	  - Auto-clamps Green LED settings for MAX30102 (2-LED variant)

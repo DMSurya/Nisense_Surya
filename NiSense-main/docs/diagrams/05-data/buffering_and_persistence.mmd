@@ -1,0 +1,41 @@
+%%{init: {'theme': 'base'}}%%
+%% =============================================================================
+%% BUFFERING AND PERSISTENCE — RAM + QSPI record_store / NVS / XIP
+%% Updated: 2026-07-21
+%% =============================================================================
+
+graph TB
+    subgraph RAM_256KB
+        Stacks[Thread_stacks]
+        Heap[System_heap]
+        LvglPool[LVGL_pool]
+        PpgBuf[ppg_algo_sample_buffer]
+        BleBuf[BLE_ATT_buffers]
+    end
+
+    subgraph InternalFlash_1MB
+        McuBoot[MCUboot]
+        AppImg[App_image]
+        NvsInt[NVS_settings]
+    end
+
+    subgraph ExtQSPI_8MB
+        CalModel[calibration_model]
+        GlucXip[glucose_model_AB]
+        RecStore[record_store_slots]
+        Assets[Resource_fonts_icons]
+    end
+
+    subgraph ExportPaths
+        BleDef4[BLE_def4_sync]
+        CdcRec[CDC_nisense_rec]
+    end
+
+    PpgBuf --> RecStore
+    Heap --> RecStore
+    RecStore --> BleDef4
+    RecStore --> CdcRec
+    GlucXip -.-> PpgBuf
+    CalModel -.-> PpgBuf
+    Assets -.-> LvglPool
+    NvsInt -.-> Stacks

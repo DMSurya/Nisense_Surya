@@ -1,0 +1,85 @@
+%%{init: {'theme': 'base'}}%%
+%% =============================================================================
+%% SENSOR DATA PIPELINE — NOR record_store + BLE def4 / CDC
+%% Updated: 2026-07-21
+%% =============================================================================
+
+graph LR
+    subgraph SensorHardware
+        PPG_HW[MAX86141_or_MAX3010x]
+        Accel_HW[LIS2DS12]
+        Temp_HW[MAX302xx]
+        Glucose_HW[INA122_SAADC]
+        Prox_HW[VCNL3040]
+    end
+
+    subgraph Drivers
+        PPG_Drv[PPG_hub_or_AFE]
+        Accel_Drv[Accel]
+        Temp_Drv[Temp]
+        Glucose_Drv[Glucose_sensor]
+        Prox_Drv[Proximity]
+    end
+
+    subgraph Processing
+        PPG_Algo[ppg_algo]
+        Glucose_Algo[glucose_algorithm]
+        FactoryCal[calibration_apply]
+    end
+
+    subgraph Results
+        PPG_Result[HR_SpO2_Hb]
+        Glucose_Result[glucose_mg_dl]
+        Temp_Result[skin_temp_C]
+        Wear_Status[wear_state]
+    end
+
+    subgraph Outputs
+        UI[LVGL_UI]
+        RecStore[record_store]
+        BleLive[BLE_notify_def1]
+        BleSync[BLE_record_sync_def4]
+        CdcShell[USB_CDC_shell]
+    end
+
+    subgraph ExternalFlash
+        NVS[NVS_config]
+        XIPModel[XIP_glucose_model]
+        RecPart[record_store_partition]
+        CalPart[calibration_model]
+    end
+
+    PPG_HW --> PPG_Drv
+    Accel_HW --> Accel_Drv
+    Temp_HW --> Temp_Drv
+    Glucose_HW --> Glucose_Drv
+    Prox_HW --> Prox_Drv
+
+    PPG_Drv --> PPG_Algo
+    Accel_Drv --> PPG_Algo
+    Glucose_Drv --> Glucose_Algo
+    Temp_Drv --> Temp_Result
+    Prox_Drv --> Wear_Status
+    CalPart --> FactoryCal
+    FactoryCal --> PPG_Algo
+    FactoryCal --> Glucose_Algo
+    FactoryCal --> Temp_Result
+    XIPModel --> Glucose_Algo
+
+    PPG_Algo --> PPG_Result
+    Glucose_Algo --> Glucose_Result
+
+    PPG_Result --> UI
+    PPG_Result --> RecStore
+    PPG_Result --> BleLive
+    Glucose_Result --> UI
+    Glucose_Result --> RecStore
+    Glucose_Result --> BleLive
+    Temp_Result --> UI
+    Temp_Result --> RecStore
+    Temp_Result --> BleLive
+
+    RecStore --> RecPart
+    RecStore --> BleSync
+    RecStore --> CdcShell
+    NVS -.-> UI

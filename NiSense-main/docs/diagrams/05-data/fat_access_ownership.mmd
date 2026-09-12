@@ -1,0 +1,38 @@
+%%{init: {'theme': 'base'}}%%
+%% =============================================================================
+%% RECORD STORE ACCESS / SYNC OWNERSHIP (replaces FatFS/MSC ownership)
+%% Code: src/storage/record_store.c, src/ble/ble_record_sync.c, src/diag/diag_shell.c
+%% Updated: 2026-07-21
+%% =============================================================================
+
+stateDiagram-v2
+    [*] --> Idle: Boot_record_store_init
+
+    state Idle {
+        [*] --> Ready
+        Ready --> Writing: append_summary_or_raw
+        Writing --> Ready: slot_committed
+    }
+
+    state SyncBle {
+        [*] --> PullActive: f401_START
+        PullActive --> Streaming: f402_frames
+        Streaming --> AckWait: stream_done
+        AckWait --> PullActive: more_pending
+        AckWait --> [*]: f401_ACK_up_to_id
+    }
+
+    state SyncCdc {
+        [*] --> ShellExport: nisense_rec_export
+        ShellExport --> [*]: frames_on_CDC
+    }
+
+    Idle --> SyncBle: BLE_def4_connected
+    SyncBle --> Idle: disconnect_or_idle
+    Idle --> SyncCdc: USB_CDC_shell
+    SyncCdc --> Idle: command_done
+
+    note right of Writing
+        nor_qspi_busy around
+        program_erase only
+    end note

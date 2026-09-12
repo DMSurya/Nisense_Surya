@@ -1,0 +1,9 @@
+connect
+reset
+halt
+SetBP 0x0001C0B8 A
+g
+sleep 40000
+halt
+r
+exit

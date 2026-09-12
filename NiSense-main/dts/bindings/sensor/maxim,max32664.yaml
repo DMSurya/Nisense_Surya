@@ -1,0 +1,140 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Analog Devices MAX32664 Biometric Sensor Hub - Unified Driver
+  
+  This is a unified sensor ecosystem driver that:
+  1. Auto-detects hub variant (GWEC/GWED) via AFE WHOAMI register
+  2. Exposes underlying sensors (MAX86141, MAX30101, LIS2DS12) via sensor API
+  3. Supports both hub algorithm mode and raw sensor access mode
+  
+  Sensor Ecosystem Architecture:
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                    MAX32664 Sensor Hub                          │
+  │                                                                 │
+  │   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐          │
+  │   │  MAX86141   │   │  MAX30101   │   │  LIS2DS12   │          │
+  │   │  (PPG AFE)  │   │  (PPG AFE)  │   │   (Accel)   │          │
+  │   │  GWEC var   │   │  GWED var   │   │  GWEC only  │          │
+  │   └─────────────┘   └─────────────┘   └─────────────┘          │
+  │          │                │                  │                  │
+  │          └────────────────┼──────────────────┘                  │
+  │                           │                                     │
+  │                    ┌──────▼──────┐                              │
+  │                    │ Hub Algos   │  ◄── Optional (can bypass)   │
+  │                    │ HR/SpO2/BPT │                              │
+  │                    └─────────────┘                              │
+  │                           │                                     │
+  └───────────────────────────┼─────────────────────────────────────┘
+                              │ I2C Slave Interface (0x55)
+                              ▼
+                         nRF52840 MCU
+  
+  Operating Modes:
+    - HUB_MODE: Use hub's built-in algorithms (HR/SpO2/BPT)
+    - RAW_MODE: Direct access to AFE/accel for on-chip processing
+    - PASSTHROUGH: Access underlying sensor registers via hub commands
+  
+  Variant Auto-Detection (via AFE WHOAMI at Family 0x41, Index 0x00, Write 0xFF):
+    - 0x25 (MAX86141) → GWEC variant (wrist PPG + accelerometer)
+    - 0x36 (MAX86161) → GWEC variant (wrist PPG + accelerometer)  
+    - 0x15 (MAX30101/MAX30102/MAX30105 Part ID) → GWED variant (finger PPG)
+      Note: 0x11 is MAX30100 only; 30101 vs 30102 cannot be told apart by Part ID.
+    - Other/failure  → Uses variant-hint property or defaults to GWEC
+  
+  Datasheet: MAX32664 Biometric Sensor Hub
+
+compatible: "maxim,max32664"
+
+include:
+  - name: i2c-device.yaml
+
+properties:
+  reg:
+    required: true
+    description: |
+      I2C slave address (7-bit). Default: 0x55
+      Some boards may use alternate addresses: 0x66, 0x68
+
+  reset-gpios:
+    type: phandle-array
+    required: false
+    description: |
+      Optional RSTN reset pin (active-low).
+      If specified, driver pulses reset during initialization.
+      If not specified, driver uses I2C soft-reset or power-cycle.
+
+  interrupt-gpios:
+    type: phandle-array
+    required: false
+    description: |
+      MFIO pin from hub (data-ready interrupt), wired on current NiSense HW
+      (nRF P1.06). Prefer GPIO_ACTIVE_LOW so logical assert = phys LOW
+      (matches AN6924 Normal MFIO hold-low and IRQ edge polarity).
+
+      When present:
+        - Driver enables hub IRQ output (cmd 0xB8 0x01) unless FW major==32
+          (AN6924: IRQ mode unsupported on 32.x.y; Normal MFIO + poll).
+        - IRQ path: after falling edge, transport issues five dummy writes
+          of 0x00 to I2C address 0x00 before hub transactions (AN6924 p.12).
+        - Normal (non-IRQ) path: MFIO held low >=300 us through write +
+          CMD_DELAY + read, then released high.
+        - poll-interval-ms remains as fallback (GWEC may not assert DataRdy
+          on every RAW FIFO fill).
+      If omitted, driver is poll-only with Normal MFIO wake when the pin is
+      still available as a GPIO without IRQ.
+
+  vin-supply:
+    type: phandle
+    required: false
+    description: |
+      Power supply regulator (typically 1.8V from PMIC).
+      If specified, enables power-cycle reset capability.
+      Example: vin-supply = <&max20360_bk2>;
+
+  poll-interval-ms:
+    type: int
+    default: 200
+    description: |
+      Hub FIFO status poll interval (ms). Used as the sole wake when MFIO
+      is absent, and as fallback when interrupt-gpios is present.
+      Range: 40-1000ms (25Hz to 1Hz).
+      Default 200 ms: at 25 Hz AFE output (40 ms/sample) this batches
+      ~5 samples per I2C poll, keeping bus utilisation at ~2.5% vs
+      ~12% if polled every sample period.
+
+  accel-source:
+    type: string
+    required: false
+    default: "internal"
+    enum:
+      - "internal"
+      - "external"
+    description: |
+      Accelerometer data source (GWEC variant only):
+      
+      - "internal": Hub reads LIS2DS12 via its SPI interface (default)
+      - "external": App feeds accel data via sensor_attr_set()
+      
+      Ignored for GWED variant (no accelerometer).
+
+  variant-hint:
+    type: string
+    required: false
+    enum:
+      - "gwec"
+      - "gwed"
+    description: |
+      Board SKU family hint. Compared at init against the firmware-major
+      variant classification (primary detector). Conflict is a hard init
+      failure — neither side silently overrides the other.
+
+      - "gwec": wrist hardware → firmware must classify as Variant B or C
+        (MAX86141/MAX86161 + accelerometer)
+      - "gwed": finger hardware → firmware must classify as Variant A or D
+        (MAX3010x Part ID 0x15)
+
+      If firmware major is unrecognised (UNKNOWN) but a hint is present,
+      the hint selects a default (C for gwec, D for gwed). If the algo
+      capability probe fails, a matching hint may corroborate; with no
+      hint, probe failure fails init.

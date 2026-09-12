@@ -1,0 +1,84 @@
+%%{init: {'theme': 'base'}}%%
+%% =============================================================================
+%% RTC TIME SYNC FLOW
+%% =============================================================================
+%% Purpose: Shows how time is synchronized from various sources
+%% Scope: Init sync, BLE sync, NTP sync, drift compensation
+%% Assumptions:
+%%   - Build time used as fallback if RTC lost power
+%%   - BLE provides primary time sync from mobile app
+%%   - Trim value stored in NVS for clock calibration
+%% =============================================================================
+
+sequenceDiagram
+    participant App as Application<br/>(main.c)
+    participant RTCMgr as RTC Manager<br/>(rtc.c)
+    participant Counter as Counter API
+    participant Driver as MCP7940N Driver
+    participant I2C as I2C0 Bus
+    participant RTC as MCP7940N IC
+    participant BLE as BLE GATT<br/>(ble_gatt.c)
+    participant Mobile as Mobile App
+    participant NVS as NVS Storage
+
+    Note over App,RTC: Boot Time Initialization
+    
+    App->>RTCMgr: rtc_init()
+    RTCMgr->>Counter: counter_get_value()
+    Counter->>Driver: get_value()
+    Driver->>I2C: i2c_burst_read()
+    I2C->>RTC: Read TIME registers
+    RTC-->>I2C: BCD time data
+    I2C-->>Driver: Raw bytes
+    Driver-->>Counter: Unix timestamp
+    Counter-->>RTCMgr: current_time
+    
+    alt RTC time valid (year > 2024)
+        RTCMgr->>RTCMgr: Use RTC time
+    else RTC lost power
+        RTCMgr->>RTCMgr: Parse __DATE__ __TIME__
+        RTCMgr->>Counter: counter_set_top_value()
+        Note right of RTCMgr: Set to build time<br/>as minimum valid time
+    end
+
+    RTCMgr->>NVS: config_load()
+    NVS-->>RTCMgr: rtc_trim_value
+    RTCMgr->>Driver: Apply trim calibration
+    RTCMgr-->>App: RTC Ready
+
+    Note over BLE,Mobile: BLE Time Sync via CTS (User Initiated)
+    
+    Mobile->>BLE: Write Current Time 0x2A2B<br/>(YMD HMS + day-of-week)
+    BLE->>RTCMgr: rtc_write_datetime(tm)
+    RTCMgr->>Counter: counter_set_top_value()
+    Counter->>Driver: set_top_value()
+    Driver->>I2C: i2c_burst_write()
+    I2C->>RTC: Write TIME registers
+    RTC-->>I2C: ACK
+    I2C-->>Driver: Success
+    Driver-->>Counter: OK
+    Counter-->>RTCMgr: OK
+    RTCMgr-->>BLE: Sync Complete
+    BLE-->>Mobile: Write Response
+
+    Note over RTCMgr,RTC: Periodic Alarm (1 minute)
+
+    loop Every 60 seconds
+        RTC->>Driver: Alarm IRQ (if enabled)
+        Driver->>RTCMgr: rtc_alarm_callback()
+        RTCMgr->>RTCMgr: Update alarm_count
+        RTCMgr->>Driver: Re-arm alarm
+    end
+
+    Note over RTCMgr,NVS: Timestamp Requests
+
+    App->>RTCMgr: rtc_get_unix_time()
+    RTCMgr->>RTCMgr: Check cache validity
+    alt Cache valid (< 1 sec old)
+        RTCMgr-->>App: Cached timestamp
+    else Cache stale
+        RTCMgr->>Counter: counter_get_value()
+        Counter-->>RTCMgr: Fresh timestamp
+        RTCMgr->>RTCMgr: Update cache
+        RTCMgr-->>App: Fresh timestamp
+    end

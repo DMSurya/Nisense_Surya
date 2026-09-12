@@ -1,0 +1,6 @@
+connect
+halt
+erase
+loadfile "e:\AARMS\HCM\NiSense\build_sdk_v330\merged.hex"
+g
+exit

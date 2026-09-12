@@ -1,0 +1,117 @@
+%%{init: {'theme': 'base'}}%%
+%% =============================================================================
+%% PPG/SpO2 DATA FLOW DIAGRAM
+%% =============================================================================
+%% Purpose: Shows the flow of PPG data from sensor to application
+%% Scope: Sampling, buffering, algorithm processing, result delivery
+%% Assumptions:
+%%   - PASSTHROUGH path example (mode-specific data flow)
+%%   - 25Hz sample rate, 300 samples per measurement (~12 seconds)
+%%   - Internal driver polling (no middleware)
+%% =============================================================================
+
+graph TB
+    subgraph "Hardware Layer"
+        subgraph "SFH7074"
+            SPO2[IR + Red]
+            HR[Green]
+            PD[Photodiode<br/>Sensor]
+        end
+        MAX86141[AFE<br/>SPO2 + HR]
+        LIS2DS12[Accelerometer<br/>Motion]
+        MAX32664[HUB<br/>ALGO + I2C Bridge]
+    end
+
+    subgraph "Driver Layer"
+        MAX86141_PPG[MAX86141 Driver<br/>PPG FIFO Read]
+        LIS2DS12_ACCEL[LIS2DS12 Driver<br/>Motion Read]
+        MAX32664_HUB[MAX32664 Driver<br/>Passthrough/Raw/Algo]
+    end
+
+    subgraph "Subsystem Layer - Zephyr"
+        PPG_ALGO[ppg_algo Subsystem<br/>Orchestrator]
+        SAMPLES[Sample Buffer<br/>IR/Red/Green/Accel]
+        PRE_PROC[Preprocessing<br/>Filtering<br/>Baseline Removal]
+        PEAK_DETECT[Peak Detection<br/>Systolic/Diastolic]
+        HR_CALC[HR Calculation<br/>Peak-to-Peak]
+        SPO2_CALC[SpO2 Calculation<br/>R-Value Ratio]
+        QUALITY_CHECK[Signal Quality<br/>Motion Artifact<br/>Perfusion Index]
+        RESULT[PPG Result<br/>HR: BPM<br/>SpO2: pct<br/>Quality: pct]
+        SAMPLE_TRIG[Sample Trigger<br/>PPG_TRIG_SAMPLE_READY]
+        COMPLETE_TRIG[Complete Trigger<br/>PPG_TRIG_MEASUREMENT_COMPLETE]
+    end
+
+    subgraph "Application Layer"
+        subgraph "UI"
+            SPO2_UI[SPO2<br/>spo2_ui.c]
+            HR_UI[HR<br/>hr_ui.c]
+        end
+        TIMER[Timer<br/>k_timer for measurement timing]
+        DATA_LOG[Log<br/>ppg_logger.c<br/>CSV to FAT]
+        BLE[MOBILE<br/>sensor_data_chrc]
+        WIFI[SERVER<br/>HTTP/MQTT/TCP/UDP]
+    end
+
+    %% Hardware flow
+    MAX86141 -->|Illuminate| SPO2
+    MAX86141 -->|Illuminate| HR
+    PD -->|Photocurrent| MAX86141
+    MAX86141 -->|AFE Data| MAX32664
+    LIS2DS12 -->|Motion Data| MAX32664
+
+    %% Driver internal flow
+    MAX32664 -->|I2C| MAX32664_HUB
+    MAX32664_HUB -->|passthrough| MAX86141_PPG
+    MAX32664_HUB -->|passthrough| LIS2DS12_ACCEL
+
+
+    %% Driver to Subsystem
+    MAX86141_PPG -->|k_work_schedule<br/>25Hz <-> 100Hz| PPG_ALGO
+    LIS2DS12_ACCEL -->|k_work_schedule<br/>1Hz <-> 800Hz| PPG_ALGO
+    PPG_ALGO --> SAMPLES
+
+    %% Algorithm processing
+    SAMPLES -->|IR+RED+GREEN+ACCEL| PRE_PROC
+    PRE_PROC --> PEAK_DETECT
+    PEAK_DETECT --> HR_CALC
+    PEAK_DETECT --> SPO2_CALC
+    SAMPLES -->|IR+RED+GREEN+ACCEL| QUALITY_CHECK
+    HR_CALC --> RESULT
+    SPO2_CALC --> RESULT
+    QUALITY_CHECK --> RESULT
+    SAMPLES -->|Trigger| SAMPLE_TRIG
+    SAMPLES -->|Trigger| COMPLETE_TRIG
+
+    %% Result delivery via triggers
+    RESULT -->|Trigger| UI
+    SAMPLE_TRIG -->|Trigger| UI
+    COMPLETE_TRIG -->|Trigger| UI
+    RESULT -->|Trigger| DATA_LOG
+    SAMPLE_TRIG -->|Trigger| DATA_LOG
+    COMPLETE_TRIG -->|Trigger| DATA_LOG
+    RESULT -->|Trigger| BLE
+    SAMPLE_TRIG -->|Trigger| BLE
+    COMPLETE_TRIG -->|Trigger| BLE
+    RESULT -->|Trigger| WIFI
+    SAMPLE_TRIG -->|Trigger| WIFI
+    COMPLETE_TRIG -->|Trigger| WIFI
+
+    %% Sampling control (simplified)
+    SPO2_UI -->|sensor_attr_set<br/>TRIG_SPO2| PPG_ALGO
+    HR_UI -->|sensor_attr_set<br/>TRIG_HR| PPG_ALGO
+    TIMER -->|sensor_attr_set<br/>TRIG_BOTH| PPG_ALGO
+    BLE -->|sensor_attr_set<br/>TRIG_BOTH| PPG_ALGO
+    WIFI -->|sensor_attr_set<br/>TRIG_BOTH| PPG_ALGO
+
+    %% Styling
+    classDef hw fill:#cfd8dc,stroke:#455a64,stroke-width:2px
+    classDef driver fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef algo fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    classDef result fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
+    classDef app fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+
+    class SPO2,HR,PD,MAX86141,LIS2DS12,MAX32664 hw
+    class MAX86141_PPG,LIS2DS12_ACCEL,MAX32664_HUB driver
+    class PPG_ALGO,SAMPLES,PRE_PROC,PEAK_DETECT,HR_CALC,SPO2_CALC,QUALITY_CHECK algo
+    class RESULT,SAMPLE_TRIG,COMPLETE_TRIG result
+    class UI,TIMER,DATA_LOG,BLE,WIFI app

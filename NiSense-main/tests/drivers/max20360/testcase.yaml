@@ -1,0 +1,10 @@
+tests:
+  drivers.max20360.golden:
+    platform_allow:
+      - native_sim
+      - native_posix
+    tags:
+      - drivers
+      - max20360
+    integration_platforms:
+      - native_sim

@@ -1,0 +1,33 @@
+%%{init: {'theme': 'base'}}%%
+%% C4 container — record_store + BLE def4 / CDC — 2026-07-21
+
+graph TB
+    subgraph Boundary[System_Boundary]
+        Bootloader[MCUboot]
+        subgraph App[Zephyr_Application]
+            AppCore[Application_core]
+            LVGL[LVGL_UI]
+            Sensors[Sensor_processing]
+            BLEService[BLE_GATT_def0_def1_def4]
+            RecStore[record_store]
+            NVS[NVS_config]
+            CdcShell[USB_CDC_shell]
+        end
+        ExtFlash[QSPI_MX25R64]
+    end
+
+    Mobile[Mobile_NiSense_Link]
+    HostPC[Host_PC_CDC]
+    Cloud[Cloud_via_phone]
+
+    AppCore --> LVGL
+    AppCore --> Sensors
+    Sensors --> RecStore
+    RecStore --> ExtFlash
+    NVS --> ExtFlash
+    RecStore --> BLEService
+    RecStore --> CdcShell
+    BLEService --> Mobile
+    Mobile --> Cloud
+    CdcShell --> HostPC
+    Bootloader --> AppCore

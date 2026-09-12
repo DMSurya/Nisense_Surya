@@ -1,0 +1,560 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config MAX32664
+	bool "MAX32664 Biometric Sensor Hub"
+	default y
+	depends on I2C && SENSOR && GPIO
+	help
+	  Unified driver for MAX32664 sensor hub.
+	  Supports GWEC (MAX86141+LIS2DS12) and GWED (MAX30101) variants.
+	  
+	  The operating mode determines how sensors are accessed:
+	  - HUB mode: Hub runs algorithms internally (HR/SpO2/BPT)
+	  - RAW mode: Direct sensor access for on-chip processing
+	  
+	  Select exactly ONE operating mode below.
+
+if MAX32664
+
+choice MAX32664_OPERATING_MODE
+	prompt "Operating Mode"
+	default MAX32664_MODE_RAW
+	help
+	  Select the operating mode for MAX32664 sensor hub.
+	  This affects which code is compiled and how sensors are accessed.
+
+config MAX32664_MODE_PASSTHROUGH
+	bool "PASSTHROUGH Mode - Direct sensor control with on-chip algorithm"
+	help
+	  PASSTHROUGH mode gives full control of MAX86141 and LIS2DS12 sensors.
+	  Hub acts as I2C bridge only - no internal algorithm processing.
+	  
+	  In this mode:
+	  - Hub algorithms and AFE management disabled
+	  - Direct register access to MAX86141 PPG sensor
+	  - Direct register access to LIS2DS12 accelerometer
+	  - On-chip PPG algorithm runs on nRF52840 (HR/SpO2 calculation)
+	  - Full configurability of LED currents, sample rates, etc.
+	  
+	  Use when: You need maximum flexibility and custom algorithm tuning.
+	  Hardware: MAX32664GWEC + MAX86141 + LIS2DS12
+
+config MAX32664_MODE_RAW
+	bool "RAW Mode - On-chip algorithm processing (legacy)"
+	select PPG_ALGORITHM_ONCHIP
+	help
+	  RAW mode exposes underlying sensors (MAX86141 PPG, LIS2DS12 Accel)
+	  directly to the application via standard Zephyr sensor APIs.
+	  
+	  In this mode:
+	  - PPG data read from MAX86141 via hub passthrough
+	  - Accel data read from LIS2DS12 via hub passthrough
+	  - On-chip PPG algorithm runs on nRF52840
+	  - acc_ui.c included for accelerometer visualization
+	  
+	  Use when: You want full control over algorithms and raw data access.
+	  Hardware: MAX32664 + MAX86141 + LIS2DS12 (GWEC variant)
+
+config MAX32664_MODE_HUB
+	bool "HUB Mode - Use hub's internal algorithms"
+	help
+	  HUB mode uses the MAX32664's built-in algorithms for HR/SpO2/BPT.
+	  
+	  In this mode:
+	  - Hub firmware processes PPG internally
+	  - Only algorithm results (HR, SpO2, quality) exposed
+	  - Lower CPU usage on nRF52840
+	  - acc_ui.c NOT included (no direct accel access)
+	  
+	  Variant B (WHRM-only, FW major 20) is NOT supported by default —
+	  its FIFO parser is still a stub. See MAX32664_HUB_VARIANT_B.
+	  
+	  Use when: You want validated algorithms with low power consumption.
+	  Hardware: Variant A/C/D (GWEC C or GWED A/D). Not Variant B unless
+	  the incomplete stub is explicitly opted in.
+
+endchoice
+
+if MAX32664_MODE_HUB
+
+config MAX32664_HUB_VARIANT_B
+	bool "HUB: compile Variant B (WHRM-only) support"
+	default n
+	help
+	  Variant B FIFO parsing is not implemented (parse_fifo returns
+	  -ENOTSUP). Keep this disabled for production HUB builds.
+	  
+	  When disabled, HUB init refuses FW major 20 (Variant B) with
+	  -ENOTSUP instead of linking a silent stub.
+	  
+	  Enabling this alone is not enough: you must also set
+	  MAX32664_HUB_VARIANT_B_ALLOW_INCOMPLETE=y or the build fails
+	  with #error.
+
+config MAX32664_HUB_VARIANT_B_ALLOW_INCOMPLETE
+	bool "I acknowledge Variant B HUB FIFO parse is incomplete"
+	depends on MAX32664_HUB_VARIANT_B
+	default n
+	help
+	  Required acknowledgement to compile max32664b.c while
+	  parse_fifo is still a stub. For bring-up experiments only.
+
+endif # MAX32664_MODE_HUB
+
+if MAX32664_MODE_RAW
+
+# RAW sample rejection thresholds (engineering guard, not clinical)
+config MAX32664_RAW_MAX_VALID_ADC
+	int "RAW: Maximum valid ADC value (engineering rejection threshold)"
+	default 524287
+	range 0 524287
+	help
+	  Maximum allowed PPG ADC value before a sample is rejected as invalid.
+	  Default is full-scale (19-bit ADC: 524287). Lower to filter high outliers.
+
+config MAX32664_RAW_NEAR_SAT_ADC
+	int "RAW: Near-saturation ADC value (warning threshold)"
+	default 524287
+	range 0 524287
+	help
+	  ADC value at or above which a sample is considered near-saturation.
+	  Default is full-scale (19-bit ADC: 524287). Lower to trigger earlier.
+
+config MAX32664_RAW_SETTLE_DISCARD_SAMPLES
+	int "RAW: Discard samples after LED wake (settle)"
+	default 25
+	range 0 250
+	help
+	  Number of hub FIFO frames to discard at the start of each RAW
+	  measurement after PPG LEDs leave SHDN/PA=0. At the production
+	  25 Hz report period this is ~1 s (40 ms * N). Frames are dropped
+	  before validity checks so early LED/AFE settle and stale FIFO
+	  data never enter the PPG algo buffer. Set 0 to disable.
+
+config MAX32664_RAW_PPG_SENSOR
+	bool "MAX86141 PPG child driver (sensor API via hub passthrough)"
+	default y
+	help
+	  When enabled, builds max86141_ppg.c so devicetree nodes
+	  compatible = "maxim,max86141-ppg" under the hub register as Zephyr
+	  sensor devices (sensor_sample_fetch / sensor_channel_get).
+
+	  Turn off only if you use the hub device alone and never point
+	  ncs,ppg-primary at the PPG child.
+
+config MAX32664_RAW_ACCEL_SENSOR
+	bool "LIS2DS12 accelerometer child driver (sensor API via hub passthrough)"
+	default y
+	help
+	  When enabled, builds lis2ds12_accel.c for LIS2DS12 child nodes under
+	  the hub. Needed when the accel-sensor alias targets that child.
+
+endif # MAX32664_MODE_RAW
+
+config MAX32664_POLLING_INTERVAL_MS
+	int "Default polling interval (ms)"
+	default 200
+	range 50 5000
+	help
+	  How often nRF52840 polls hub for new data.
+	  Lower = more responsive, higher CPU use.
+
+config MAX32664_ENABLE_INTERRUPT_MODE
+	bool "Enable interrupt-driven mode (optional MFIO pin)"
+	default n
+	help
+	  Legacy option retained for compatibility.
+
+	  Interrupt mode is now auto-enabled when the MAX32664 devicetree node
+	  defines interrupt-gpios. If interrupt-gpios is not present, the driver
+	  uses polling mode.
+
+config MAX32664_I2C_DEBUG_DUMP
+	bool "Enable I2C transaction debug dumps (TX/RX)"
+	default n
+	help
+	  Enable verbose logging of all I2C transactions with the MAX32664 hub.
+	  Shows transmitted (TX) and received (RX) buffers in hex format.
+
+	  Warning: Generates significant log traffic. Use only for debugging.
+	  Recommended to enable CONFIG_LOG_MODE_DEFERRED for better performance.
+
+config MAX32664_RAW_FIFO_LOG_INITIAL_READS
+	int "RAW FIFO summary logs for initial reads"
+	default 10
+	range 0 1000
+	depends on MAX32664_MODE_RAW
+	help
+	  Number of initial RAW FIFO reads to always log with summary info.
+
+config MAX32664_RAW_FIFO_LOG_EVERY_N_READS
+	int "RAW FIFO summary periodic log cadence"
+	default 100
+	range 1 100000
+	depends on MAX32664_MODE_RAW
+	help
+	  After the initial logs, print RAW FIFO summary every N reads.
+
+config MAX32664_RAW_FIFO_DEBUG_DUMP
+	bool "Enable RAW FIFO payload hex dumps"
+	default n
+	depends on MAX32664_MODE_RAW
+	help
+	  Dump RAW sensor payload bytes from hub FIFO reads.
+
+config MAX32664_RAW_FIFO_DEBUG_DUMP_INITIAL_READS
+	int "RAW FIFO payload dumps for initial reads"
+	default 5
+	range 0 1000
+	depends on MAX32664_MODE_RAW
+	help
+	  Number of initial RAW FIFO reads to always dump in hex.
+
+config MAX32664_RAW_FIFO_DEBUG_DUMP_EVERY_N_READS
+	int "RAW FIFO payload dump periodic cadence"
+	default 1
+	range 1 100000
+	depends on MAX32664_MODE_RAW
+	help
+	  After initial dumps, dump RAW payload every N reads.
+
+choice MAX32664_ACCEL_SOURCE_SELECTION
+	prompt "Accelerometer source selection"
+	default MAX32664_ACCEL_SOURCE_FROM_DT
+	depends on MAX32664_MODE_HUB || MAX32664_MODE_RAW
+	help
+	  Select how the MAX32664 driver determines accelerometer source.
+
+	  - From DTS: use accel-source property from the hub DT node.
+	  - Force internal: hub drives accel itself.
+	  - Force external: host reads accel via passthrough and feeds 0x14/0x04.
+
+config MAX32664_ACCEL_SOURCE_FROM_DT
+	bool "Use DTS accel-source property"
+	help
+	  Default behavior. The driver reads accel-source from devicetree
+	  ("internal" or "external").
+
+config MAX32664_ACCEL_SOURCE_INTERNAL
+	bool "Force internal accel source (hub-driven)"
+	help
+	  Ignore DTS accel-source and force internal hub-driven accelerometer path.
+
+config MAX32664_ACCEL_SOURCE_EXTERNAL
+	bool "Force external accel source (host-fed)"
+	help
+	  Ignore DTS accel-source and force external host-fed accelerometer path.
+	  Pair with CONFIG_MAX32664_EXTERNAL_ACCEL_FEEDER=y.
+
+endchoice
+
+# ============================================================================
+# External Accelerometer Feeder (host-fed accel for MAX32664C WHRM)
+# ============================================================================
+# Context: MAX32664C GWEC firmware v30.2.2 only auto-drives a KX122 over its
+# internal sensor bus. Boards that ship with a LIS2DS12 instead can still run
+# WHRM+WSpO2 by having the nRF read LIS2DS12 registers via hub passthrough
+# (Family 0x41 / 0x04) and feed the samples back to the hub input FIFO
+# (Family 0x14 / 0x04) at the algorithm's expected rate (25 Hz).
+#
+# Activate by setting accel-source = "external" in the hub DTS node AND
+# enabling MAX32664_EXTERNAL_ACCEL_FEEDER below.
+# ============================================================================
+
+config MAX32664_EXTERNAL_ACCEL_FEEDER
+	bool "Host-fed accelerometer feeder thread"
+	default n
+	depends on MAX32664 && (MAX32664_MODE_RAW || MAX32664_MODE_HUB)
+	help
+	  Enable a dedicated low-priority thread that periodically reads the
+	  LIS2DS12 accelerometer via hub passthrough and feeds the samples
+	  back into the hub's input FIFO for WHRM motion-rejection.
+
+	  Required when the board has a LIS2DS12 wired to the MAX32664C's
+	  sensor bus (not a KX122) and the hub firmware (v30.2.2 GWEC) cannot
+	  read the chip directly. The feeder only runs while the hub is in
+	  sampling state (started by sensor_attr_set(SAMPLING_FREQUENCY)).
+
+	  Recommended pairing: DTS "accel-source = \"external\";" — the hub
+	  variant-C init skips the internal accel enable step in that mode.
+
+config MAX32664_EXTERNAL_ACCEL_FEED_RATE_HZ
+	int "Feeder sample rate (Hz)"
+	default 25
+	range 10 100
+	depends on MAX32664_EXTERNAL_ACCEL_FEEDER
+	help
+	  How often the feeder reads LIS2DS12 and writes to the hub. Must
+	  match the PPG output rate configured by the variant (25 Hz for
+	  MAX32664C WHRM+WSpO2 v3x). Raise only if the algorithm firmware
+	  on a specific hub variant expects a different rate.
+
+config MAX32664_EXTERNAL_ACCEL_FEEDER_STACK_SIZE
+	int "Feeder thread stack size (bytes)"
+	default 1024
+	range 512 4096
+	depends on MAX32664_EXTERNAL_ACCEL_FEEDER
+	help
+	  Only runs 6-byte passthrough reads + 8-byte feed writes in a loop.
+	  1 KB is sufficient; tune against the CONFIG_APP_DIAG_MONITOR
+	  high-watermark.
+
+config MAX32664_EXTERNAL_ACCEL_FEEDER_PRIORITY
+	int "Feeder thread priority (preemptible)"
+	default 6
+	range 0 15
+	depends on MAX32664_EXTERNAL_ACCEL_FEEDER
+	help
+	  Must be higher priority (lower numerical value) than LVGL (7) and
+	  the USB MSC thread so the 40 ms tick isn't delayed by UI work. Too
+	  high (< 4) will starve BLE. 6 is a safe default.
+
+config MAX32664_HUB_OUTPUT_MODE_ALGO_PLUS_SENSOR
+	bool "Request algorithm + raw sensor output (mode 0x03) with fallback to 0x02"
+	default n
+	depends on MAX32664_MODE_HUB
+	help
+	  When enabled, the hub driver asks for output mode 0x03 (algorithm
+	  results PLUS raw MAX86141 PPG + accel prefix) every time it would
+	  otherwise request mode 0x02. Each FIFO entry grows from 16 bytes to
+	  CONFIG_MAX32664_HUB_MODE03_FRAME_BYTES. The variant-C parser decodes
+	  the raw PPG counts per slot/PD (plus accel XYZ) and logs them, while
+	  the trailing 16 bytes still feed the existing WHRM algorithm output.
+
+	  Use this to diagnose "algorithm stays idle" symptoms: raw PPG counts
+	  directly prove whether reflected light is reaching the ADC. If the
+	  firmware rejects 0x03 the driver automatically falls back to 0x02
+	  and nothing else changes. Leave disabled in production.
+
+	  GWEC 30.x note: the hub's mode-0x03 packing is not always "18 B prefix +
+	  16 B WHRM". The variant-C parser scans for a plausible 16-byte WHRM
+	  window; if none matches, it forces output mode 0x02 for the rest of
+	  the sampling session so HR/SpO2 stay trustworthy.
+
+config MAX32664_HUB_MODE03_FRAME_BYTES
+	int "FIFO entry size when mode 0x03 is active (bytes)"
+	default 34
+	range 17 64
+	depends on MAX32664_HUB_OUTPUT_MODE_ALGO_PLUS_SENSOR
+	help
+	  Total bytes per I2C FIFO read while the hub reports output mode 0x03.
+	  Default 34 matches several GWEC builds (18 B sensor prefix + 16 B
+	  WHRM). If your hexdumps show a different length, change this to match
+	  the payload size so one full record is clocked out per read. The
+	  parser also slides a 16-byte WHRM detector across the buffer; if no
+	  slice looks valid it auto-falls back to mode 0x02.
+
+config MAX32664_LED_SELF_TEST
+	bool "MAX86141 LED self-test on init (bring-up diagnostic)"
+	default n
+	help
+	  When enabled, the Variant-C hub init sequence runs a one-shot LED
+	  self-test right after the MAX86141 AFE is brought up and before the
+	  WHRM+WSpO2 algorithm takes control of the LED drive registers.
+
+	  The test sequentially drives LED1, LED2 and LED3 for
+	  CONFIG_MAX32664_LED_SELF_TEST_MS each at a visible drive current,
+	  then restores the firmware's preset LED_SEQ/LED_PA state. Use it to
+	  verify the SFH7074 (or other module) ↔ MAX86141 wiring and
+	  to visually confirm Red/Green LEDs before relying on SCD gating.
+
+	  IR verification requires a phone camera (IR is invisible to the eye).
+
+	  Leave disabled in production.
+
+config MAX32664_LED_SELF_TEST_MS
+	int "LED self-test dwell time per LED (ms)"
+	default 1500
+	range 250 5000
+	depends on MAX32664_LED_SELF_TEST
+	help
+	  How long each LED is held on during the self-test. 1.5 s is long
+	  enough to see a steady glow from the module even if the MAX86141
+	  sequencer duty cycle is low.
+
+config MAX32664_LED_SELF_TEST_DRIVE
+	hex "LED self-test drive current (LEDn_PA raw)"
+	default 0x7F
+	range 0x10 0xFF
+	depends on MAX32664_LED_SELF_TEST
+	help
+	  Raw 8-bit LEDn_PA register value used during the self-test.
+	  0x7F corresponds to ~25 mA on the default LED_RANGE (31 mA FS).
+	  Stay at or below 0xFF; the hardware clamps automatically but high
+	  values with a narrow LED range can saturate the photodiode.
+
+config MAX32664_LOG_AFE_LED_ON_SAMPLING_START
+	bool "Log MAX86141 LED registers after hub sampling starts"
+	default n
+	depends on MAX32664_MODE_HUB
+	help
+	  One-shot diagnostic: ~120 ms after sensor_attr_set(SAMPLING_FREQUENCY)
+	  enables hub output, read LED_SEQ1 / LED1-3_PA / LED_RANGE1 / SYSTEM_CTRL
+	  via passthrough and emit a single LOG_INF line.
+
+	  Use when HR/SpO2 runs but red/IR appear dark: WHRM+AEC often keeps
+	  non-green channels low or time-multiplexed; IR is invisible without a
+	  camera. Non-zero PA readbacks with no visible glow point to optics/wiring.
+
+config MAX32664_EXTERNAL_ACCEL_FEEDER_LOG_EVERY_N
+	int "Log one feed sample every N ticks (0 = never)"
+	default 0
+	range 0 1000
+	depends on MAX32664_EXTERNAL_ACCEL_FEEDER
+	help
+	  Diagnostic throttle. 0 keeps the feeder silent in steady state;
+	  25 => one line per second at 25 Hz. Error paths always log.
+
+# PASSTHROUGH mode specific options
+if MAX32664_MODE_PASSTHROUGH
+
+config MAX32664_PASSTHROUGH_PPG_TIMESTAMP_ENABLE
+		bool "Enable MAX86141 PPG timestamp entries (PPG_SYNC_CTRL)"
+		default y
+		help
+			If enabled, the driver will configure MAX86141 to include timestamp entries (tag 0x1F) in the FIFO stream.
+			This is required for robust sample alignment and data integrity, but increases FIFO bandwidth.
+			If disabled, timestamp entries are not generated and FIFO contains only LED/PD samples.
+			Disable for debugging or if bandwidth is a concern.
+
+config MAX32664_PASSTHROUGH_PPG_ALGORITHM
+	bool "Enable on-chip PPG algorithm (HR/SpO2 calculation)"
+	default y
+	select PPG_ALGORITHM_ONCHIP
+	help
+	  Enables shared PPG algorithm library (drivers/sensor/ppg_algo/)
+	  that calculates heart rate and SpO2 from raw MAX86141 sensor data
+	  on the nRF52840. Uses same algorithm as RAW mode.
+	  
+	  Integration via src/sensors/ppg.c provides:
+	  - AC/DC component extraction with IIR filtering
+	  - R-ratio calculation for SpO2
+	  - Peak detection for HR (FFT + autocorrelation)
+	  - Motion artifact rejection using accelerometer
+	  - Signal quality assessment and perfusion index
+	  
+	  Note: Research-grade algorithm. Clinical accuracy requires calibration.
+
+endif # MAX32664_MODE_PASSTHROUGH
+
+# Shared child-sensor init priority (RAW PPG/accel + PASSTHROUGH children).
+# Must be later than parent hub (CONFIG_SENSOR_INIT_PRIORITY, typically 90).
+if MAX32664_MODE_RAW || MAX32664_MODE_PASSTHROUGH
+
+config MAX32664_CHILD_SENSOR_INIT_PRIORITY
+	int "MAX32664 child sensor init priority"
+	default 91
+	help
+	  Initialization priority for hub child sensors (PPG, Accel).
+	  Must be higher (later) than the parent MAX32664 hub init priority.
+
+# Compatibility name used by older docs / conf snippets.
+config MAX32664_RAW_SENSOR_INIT_PRIORITY
+	int
+	default 91
+	help
+	  Deprecated alias of MAX32664_CHILD_SENSOR_INIT_PRIORITY. Prefer the
+	  CHILD symbol; both default to 91. Child DEVICE_DT macros use CHILD.
+
+endif # MAX32664_MODE_RAW || PASSTHROUGH
+
+# ============================================================================
+# Experimental HUB SpO2 calibration coefficient report (AN6924 / UG-6924)
+# ============================================================================
+config MAX32664_HUB_SPO2_CAL_REPORT
+	bool "Expose SpO2 calibration coefficient read/write (HUB)"
+	default n
+	depends on MAX32664_MODE_HUB
+	help
+	  Experimental: Family 0x50/0x51 Index 0x07 Config 0x00 — three
+	  int32 coefficients (a,b,c) x 1e5. Not used by product RAW DSP path.
+# Firmware Update Options (applicable to all operating modes)
+# ============================================================================
+
+config MAX32664_UPDATE_CHUNKED_WRITE
+	bool "Split page writes into fixed-size chunks (multiple i2c_write calls)"
+	default y
+	help
+	  Split the 8198-byte page write into smaller chunks, each sent as a
+	  separate i2c_write() call (START + data + STOP per chunk).
+
+	  The MAX32664 bootloader may accept STOP between chunks if it buffers
+	  incoming data across transactions.  If the bootloader resets on each
+	  STOP, disable this option to use a single 8198-byte i2c_write().
+
+config MAX32664_UPDATE_CHUNK_SIZE
+	int "Page write chunk size (bytes)"
+	default 128
+	range 8 8192
+	depends on MAX32664_UPDATE_CHUNKED_WRITE
+	help
+	  Number of bytes per i2c_write() chunk.
+
+config MAX32664_UPDATE_PAGE_FLASH_DELAY_MS
+	int "Page write flash programming delay (ms)"
+	default 2000
+	range 680 5000
+	help
+	  How long to wait after sending a page write command before polling
+	  for write status.  OEM reference uses 2000ms.  The MAX32664
+	  datasheet CMD_DELAY is 680ms, but 2000ms is safer for flash erase
+	  and programming variance across devices.
+
+config MAX32664_UPDATE_PAGE_WRITE_RETRIES
+	int "Page write status retry count"
+	default 4
+	range 1 20
+	help
+	  Number of times to retry the status-read when the bootloader
+	  responds with SS_ERR_TRY_AGAIN (0xFE — still programming flash).
+	  OEM reference uses 4 retries (SS_DEFAULT_RETRIES).  Each retry
+	  adds a 200ms delay.
+
+config MAX32664_UPDATE_IMAGE_ALLOWLIST
+	bool "Level 1: allow-list GWEC / MAX86141 major-30 hub images"
+	default y
+	help
+	  Before erase, reject .msbl packages that are not Variant C major 30
+	  for MAX86141 (GWEC). Blocks common mis-flash classes: MAXM86161
+	  (32.x), Variant D (40.x), and other AFE tags in the filename.
+
+config MAX32664_UPDATE_IMAGE_SHA256
+	bool "Level 2: require SHA-256 match against approved images"
+	default y
+	depends on MAX32664_UPDATE_IMAGE_ALLOWLIST
+	help
+	  Hash the full .msbl buffer before erase and compare to the baked-in
+	  allow-list (ADI 30.13.31 MAX86141 C- and Z-keyed images). Required
+	  when the name hint has no parseable version (e.g. app partition).
+
+config MAX32664_UPDATE_ERASE_CMD_DELAY_MS
+	int "Bootloader erase command delay before status read (ms)"
+	default 1400
+	range 680 5000
+	help
+	  ADI MAX32664 UG / SS_BOOTLOADER_ERASE_DELAY = 1400 ms. Do not
+	  raise to 3 s unless a specific bootloader revision requires it.
+
+config MAX32664_UPDATE_ERASE_POST_SETTLE_MS
+	int "Extra settle after successful erase status (ms)"
+	default 1400
+	range 0 5000
+	help
+	  Additional wait after erase returns success. UG Table 9 only
+	  requires CMD_DELAY on the erase command itself; keep 1400 for
+	  historical safety or set 0 for UG-strict timing.
+
+config MAX32664_UPDATE_SEND_FLASH_APP
+	bool "Send Family 0x80 Index 0x06 finalize after page writes"
+	default y
+	help
+	  UG Table 9 / ADI SampleHost flasher omit 0x80 0x06. Some images
+	  still accept it. Keep enabled unless bench shows finalize fails
+	  or is unnecessary for your bootloader revision.
+
+module = LIS2DS12_ACCEL
+module-str = LIS2DS12 accelerometer passthrough
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # MAX32664
+

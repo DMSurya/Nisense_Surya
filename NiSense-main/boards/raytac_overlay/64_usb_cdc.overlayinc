@@ -1,0 +1,10 @@
+/* USB CDC-ACM UART node (VCOM transport).
+ * Included from the board overlay (hardware topology). Drivers bind when
+ * APP_FEATURE_USB merges conf/features/usb.conf (USBD next + CDC).
+ */
+&zephyr_udc0 {
+	nisense_cdc_acm_uart: nisense_cdc_acm_uart {
+		compatible = "zephyr,cdc-acm-uart";
+		label = "NiSense CDC";
+	};
+};

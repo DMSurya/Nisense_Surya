@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Diagnostics monitor tuning options.
+# Master switch: CONFIG_APP_FEATURE_DIAG_MONITOR (Kconfig → application features).
+# Zephyr overlays: conf/features/diag_monitor.conf (merged when master is y).
+
+menu "NiSense — diagnostics (tuning)"
+	depends on APP_FEATURE_DIAG_MONITOR
+
+if APP_FEATURE_DIAG_MONITOR
+
+config DIAG_MONITOR_INTERVAL_SEC
+	int "Diagnostics monitor dump interval (seconds)"
+	default 30
+	range 1 3600
+
+config DIAG_MONITOR_STACK_SIZE
+	int "Diagnostics monitor thread stack size (bytes)"
+	default 1536
+	range 512 8192
+
+config DIAG_MONITOR_PRIORITY
+	int "Diagnostics monitor thread priority (preemptible, higher = lower prio)"
+	default 14
+	range 0 15
+
+config DIAG_MONITOR_INITIAL_DELAY_SEC
+	int "Delay before first dump (seconds)"
+	default 10
+	range 0 600
+	help
+	  Let the system finish init and exercise the main threads at
+	  least once before the first dump so the stack high-watermark
+	  is meaningful.
+
+endif # APP_FEATURE_DIAG_MONITOR
+
+endmenu

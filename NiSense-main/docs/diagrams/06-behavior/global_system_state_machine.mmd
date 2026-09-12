@@ -1,0 +1,74 @@
+%%{init: {'theme': 'base'}}%%
+%% =============================================================================
+%% GLOBAL SYSTEM STATE MACHINE
+%% =============================================================================
+%% Purpose: High-level runtime states (wear, measure, display, USB ownership)
+%% Updated: 2026-07-17 — power_mgr + health_sched + fat_access model
+%% =============================================================================
+
+stateDiagram-v2
+    [*] --> BOOT: Power On / Reset
+
+    state "Boot" as BOOT {
+        MCUBOOT --> APP_INIT: Image OK
+        APP_INIT --> READY: main() complete
+        MCUBOOT --> RECOVERY: Image invalid
+    }
+
+    state "Active" as ACTIVE {
+        state "UI Idle" as IDLE {
+            [*] --> CAROUSEL: Single screen alive
+            CAROUSEL --> CAROUSEL: SW1 short = next screen
+        }
+
+        state "Health Cycle" as MEASURING {
+            [*] --> FAT_CYCLE: fat_access_cycle_begin
+            FAT_CYCLE --> TEMP_PRE
+            TEMP_PRE --> PPG
+            PPG --> GLUCOSE
+            GLUCOSE --> TEMP_POST
+            TEMP_POST --> DONE: fat_access_cycle_end
+            DONE --> RESULTS: ui_agent slideshow
+            RESULTS --> [*]: Dismiss
+        }
+
+        state "Storage ownership" as STORAGE {
+            [*] --> MSC_HOST: USB MSC enabled<br/>(FatFS unmounted)
+            MSC_HOST --> FAT_DEVICE: fat_access begin/cycle
+            FAT_DEVICE --> MSC_HOST: session end restores MSC
+        }
+
+        IDLE --> MEASURING: Wear + auto timer<br/>or SW1 long (manual)
+        MEASURING --> IDLE: Cycle complete / cancel
+        note right of STORAGE
+            MSC and measure share userdata;
+            never concurrent FatFS + host MSC
+        end note
+    }
+
+    state "Display policy" as DISPLAY {
+        AWAKE --> ASLEEP: idle ≥ sleep_timeout (60s)
+        ASLEEP --> AWAKE: touch / PFN1 short / activity
+        note right of ASLEEP
+            Backlight GPIO off;
+            LVGL skipped in main loop;
+            health_sched still runs when worn
+        end note
+    }
+
+    state "Power policy" as POWER {
+        NORMAL --> CRITICAL_SOC: SOC ≤ 5% or PFN2
+        CRITICAL_SOC --> NORMAL: charging and SOC ≥ 20%
+        note right of CRITICAL_SOC
+            Auto health disabled;
+            display may sleep
+        end note
+        NORMAL --> SHUTDOWN: PFN1 long hold (~12s)
+    }
+
+    READY --> ACTIVE: Init complete
+    ACTIVE --> DISPLAY: power_mgr tick
+    DISPLAY --> ACTIVE: wake
+    ACTIVE --> POWER: SOC / PFN events
+    POWER --> ACTIVE: recover / charge
+    RECOVERY --> BOOT: New image

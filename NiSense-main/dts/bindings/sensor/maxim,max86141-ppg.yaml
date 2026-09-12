@@ -1,0 +1,144 @@
+# MAX86141 PPG Sensor via MAX32664 Hub Passthrough
+#
+# This binding describes a MAX86141 PPG sensor that is accessed through
+# the MAX32664 sensor hub. The parent device must be built with a
+# MAX32664 mode that exposes child sensors, selected via Kconfig.
+#
+# Product wearable path always drives three LEDs:
+#   LED1 = Green, LED2 = Red, LED3 = IR (hub FIFO slots 3 / 2 / 1 in RAW).
+#
+# Example usage in device tree:
+#
+#   &i2c1 {
+#       max32664@55 {
+#           compatible = "maxim,max32664";
+#           ...
+#
+#           max86141_ppg: ppg@0 {
+#               compatible = "maxim,max86141-ppg";
+#               reg = <0>;  /* Hub sensor index */
+#               led1-current = <0x7F>;  /* LED1 Green */
+#               led2-current = <0x40>;  /* LED2 Red */
+#               led3-current = <0x40>;  /* LED3 IR */
+#               sample-rate = <6>;      /* 25Hz */
+#               ppg-timestamp-enable;
+#               fifo-a-full-threshold = <0x10>;
+#               fifo-rollover-enable;
+#               ppg-a-full-interrupt;
+#           };
+#       };
+#   };
+
+description: MAX86141 PPG Sensor via MAX32664 Hub Passthrough (always Green+Red+IR)
+
+compatible: "maxim,max86141-ppg"
+
+include: sensor-device.yaml
+
+properties:
+  reg:
+    required: true
+    description: |
+      Hub sensor index for the MAX86141.
+      Should be 0 (HUB_SENSOR_IDX_MAX86141).
+
+  led1-current:
+    type: int
+    default: 0x7F
+    description: |
+      LED1 (Green) drive current setting (0-255).
+      Current = setting * 0.2mA (range-dependent).
+      Default 0x7F ≈ 31 mA at typical range.
+
+  led2-current:
+    type: int
+    default: 0x40
+    description: |
+      LED2 (Red) drive current setting (0-255).
+      Current = setting * 0.2mA.
+      Default 0x40 = ~12.8mA.
+
+  led3-current:
+    type: int
+    default: 0x20
+    description: |
+      LED3 (IR) drive current setting (0-255).
+      Current = setting * 0.2mA.
+      Default 0x20 = ~6.4mA.
+
+  sample-rate:
+    type: int
+    default: 6
+    description: |
+      PPG sample rate code (PPG_CONFIG1 SMP_RATE[3:0]).
+      0x00 = Power down
+      0x01 = 24.995 Hz (high-res)
+      0x02 = 50 Hz
+      0x03 = 84.021 Hz
+      0x04 = 99.902 Hz
+      0x05 = 199.805 Hz
+      0x06 = 400 Hz (default)
+      0x07 = 800 Hz (not recommended)
+      0x08-0x0B = Various rates with 2-pulse averaging
+      Default 6 = 400Hz, but filtered down in software.
+
+  adc1-range:
+    type: int
+    default: 0
+    description: |
+      ADC full-scale range (PPG_CONFIG1 PPG1_ADC_RGE[3:2]).
+      0 = 4.0 uA (max count 262143)
+      1 = 8.0 uA
+      2 = 16.0 uA
+      3 = 32.0 uA
+      Default 0 = 4.0 uA (highest resolution).
+
+  adc2-range:
+    type: int
+    default: 0
+    description: |
+      ADC full-scale range (PPG_CONFIG2 PPG2_ADC_RGE[5:4]).
+      0 = 4.0 uA (max count 262143)
+      1 = 8.0 uA
+      2 = 16.0 uA
+      3 = 32.0 uA
+      Default 0 = 4.0 uA (highest resolution).
+
+  sample-avg:
+    type: int
+    default: 3
+    description: |
+      Sample averaging (PPG_CONFIG2 SMP_AVE[2:0]).
+      0 = 1 sample (no averaging)
+      1 = 2 samples
+      2 = 4 samples
+      3 = 8 samples (default)
+      4 = 16 samples
+      5 = 32 samples
+      6 = 64 samples
+      7 = 128 samples
+
+  ppg-timestamp-enable:
+    type: boolean
+    description: |
+      Enable TIME_STAMP in FIFO (PPG_SYNC_CTRL[7]).
+      When enabled, a timestamp is pushed for a block of eight samples.
+
+  fifo-a-full-threshold:
+    type: int
+    default: 0x7F
+    description: |
+      FIFO almost-full threshold (FIFO_CONFIG1[6:0]).
+      Interrupt triggers when FIFO sample count reaches this value.
+
+  fifo-rollover-enable:
+    type: boolean
+    description: |
+      Enable FIFO rollover (FIFO_CONFIG2[4]).
+      When enabled, FIFO wraps instead of stopping when full.
+
+  ppg-a-full-interrupt:
+    type: boolean
+    description: |
+      Select FIFO A_FULL interrupt (INT_ENABLE1[7]).
+      When disabled, uses PPG_RDY interrupt (INT_ENABLE1[0]).

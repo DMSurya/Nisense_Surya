@@ -1,0 +1,7 @@
+connect
+reset
+halt
+mem32 0x000003E0 8
+mem32 0x00000D40 8
+mem32 0x20004240 16
+exit

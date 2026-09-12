@@ -1,0 +1,9 @@
+r
+SetBP 0xAC0
+g
+Sleep 3000
+h
+regs
+mem32 20003750 8
+q
+

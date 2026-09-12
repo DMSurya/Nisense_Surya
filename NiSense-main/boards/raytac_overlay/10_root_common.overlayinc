@@ -1,0 +1,48 @@
+/* Root nodes except aliases and keys */
+/ {
+	/* Zephyr chosen devices.
+	 * shell-uart is rebound to CDC ACM in 65_shell_uart.overlayinc
+	 * (board overlay). USB/shell APP features enable the drivers only.
+	 */
+	chosen {
+		/delete-property/ zephyr,console;
+		/delete-property/ zephyr,shell-uart;
+		/delete-property/ zephyr,uart-mcumgr;
+		/delete-property/ zephyr,bt-mon-uart;
+		/delete-property/ zephyr,bt-c2h-uart;
+
+		zephyr,display = &st7789v_display;
+		zephyr,touch = &ft6336_touch;
+		zephyr,code-partition = &slot0_partition;
+		/* Tell Partition Manager where external flash is */
+		nordic,pm-ext-flash = &mx25r64;
+	};
+
+	/* Fixed regulators */
+	regulators: regulators {
+		lcd_vled: regulator-lcd-vled {
+			compatible = "regulator-fixed";
+			regulator-name = "vled-lcd";
+			enable-gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
+			regulator-boot-on;
+			startup-delay-us = <5000>;
+		};
+	};
+
+	/* LVGL pointer input from touchscreen */
+	lvgl_pointer: lvgl_pointer_input {
+		compatible = "zephyr,lvgl-pointer-input";
+		input = <&ft6336_touch>;
+	};
+
+	/* PWM Buzzer on P0.12 - pwm-leds for PWM control */
+	buzzer_leds {
+		compatible = "pwm-leds";
+		status = "okay";
+
+		buzzer_pwm: buzzer_pwm_0 {
+			pwms = <&pwm1 0 PWM_USEC(1000) PWM_POLARITY_INVERTED>;
+			label = "Buzzer PWM";
+		};
+	};
+};

@@ -1,0 +1,50 @@
+{
+    "configurations": [
+        {
+            "name": "NiSense (compile_commands)",
+            "compileCommands": "${workspaceFolder}/build_sdk_v330/NiSense/compile_commands.json",
+            "compilerPath": "C:/ncs/toolchains/fd21892d0f/opt/zephyr-sdk/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "gcc-arm",
+            "browse": {
+                "path": [
+                    "${workspaceFolder}",
+                    "${workspaceFolder}/build_sdk_v330/NiSense/zephyr/include/generated",
+                    "C:/ncs/v3.3.0/zephyr/include",
+                    "C:/ncs/v3.3.0/nrf/include"
+                ],
+                "limitSymbolsToIncludedHeaders": true
+            }
+        },
+        {
+            "name": "nRF Connect SDK v3.3.0 (extension)",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/include",
+                "${workspaceFolder}/src",
+                "${workspaceFolder}/drivers",
+                "${workspaceFolder}/subsys",
+                "${workspaceFolder}/build_sdk_v330/NiSense/zephyr/include/generated",
+                "${workspaceFolder}/build_sdk_v330/NiSense/zephyr/include/generated/zephyr",
+                "C:/ncs/v3.3.0/zephyr/include",
+                "C:/ncs/v3.3.0/nrf/include"
+            ],
+            "defines": [
+                "__ZEPHYR__=1",
+                "NRF52840_XXAA",
+                "CONFIG_ARM=1",
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE"
+            ],
+            "compilerPath": "C:/ncs/toolchains/fd21892d0f/opt/zephyr-sdk/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "gcc-arm",
+            "compileCommands": "${workspaceFolder}/build_sdk_v330/NiSense/compile_commands.json",
+            "configurationProvider": "nordic-semiconductor.nrf-connect"
+        }
+    ],
+    "version": 4
+}

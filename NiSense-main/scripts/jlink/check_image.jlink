@@ -1,0 +1,23 @@
+connect
+halt
+
+// Read what's at the mcuboot_primary start (0xA000)
+// This should be the mcuboot_pad area
+mem32 0xA000 16
+
+// Read app start area (0xA200)
+// This should have the app vector table
+mem32 0xA200 16
+
+// Check image header magic at 0xA000
+// MCUboot expects IMAGE_MAGIC = 0x96f3b83d at offset 0
+mem32 0xA000 4
+
+// Check secondary slot on external flash
+// MCUboot secondary is at 0x0 on external flash (QSPI)
+// But we need to use the QSPI memory-mapped address
+// For nRF52840, QSPI is memory-mapped at 0x12000000
+mem32 0x12000000 4
+
+exit
+

@@ -1,0 +1,20 @@
+%%{init: {'theme': 'base'}}%%
+%% Sensor sampling → record_store — 2026-07-21
+
+sequenceDiagram
+    participant HS as health_sched
+    participant Sensor as Sensor_modules
+    participant Algo as Algorithms
+    participant Log as Loggers
+    participant Store as record_store
+    participant Ble as BLE_def1_live
+
+    HS->>Sensor: start_sample_window
+    Sensor->>Algo: raw_frames
+    Algo-->>Sensor: result
+    Sensor->>Log: on_complete
+    Log->>Store: append_GLUCOSE_VITALS_TEMP
+    Log->>Store: append_PPG_RAW_GLUCOSE_RAW
+    opt BLE_subscribed
+        Sensor->>Ble: notify_live_char
+    end

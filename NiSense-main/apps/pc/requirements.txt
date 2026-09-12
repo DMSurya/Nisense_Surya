@@ -1,0 +1,17 @@
+# HCM Monitor — Python dependencies
+# Install with:  pip install -r requirements.txt
+
+# Qt / QML UI
+PySide6>=6.6.0
+
+# BLE cross-platform (Windows WinRT, Linux BlueZ)
+bleak>=0.21.0
+
+# asyncio <-> Qt event loop bridge
+qasync>=0.27.0
+
+# Numeric processing (PPG decimation / signal helpers)
+numpy>=1.24.0
+
+# CBOR encoder/decoder for MCUmgr SMP image upload protocol
+cbor2>=5.4.0

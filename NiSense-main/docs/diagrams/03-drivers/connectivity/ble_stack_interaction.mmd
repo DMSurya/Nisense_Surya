@@ -1,0 +1,81 @@
+%%{init: {'theme': 'base'}}%%
+%% =============================================================================
+%% BLE STACK INTERACTION DIAGRAM
+%% =============================================================================
+%% Purpose: Shows how the application interacts with the nRF BLE stack
+%% Scope: GATT services, advertising, connections, data streaming
+%% Protocol: v2.0 — see src/ble/ble_gatt.h BLE_GATT_PROTOCOL_VERSION_*
+%% =============================================================================
+
+graph TB
+    subgraph AppLayer["Application Layer (src/)"]
+        BLEGatt[ble_gatt.c<br/>GATT Services + Pairing]
+        BLEApp[ble.c<br/>Meas Ctrl + Telemetry Tick]
+        Producers[ppg.c / glucose.c / wifi_ui.c]
+        ConfigMgr[config_manager.c]
+    end
+
+    subgraph GATTProfile["Custom GATT Profile (3 services)"]
+        subgraph WearableSvc["Wearable Config ...def0"]
+            DevName[f001 Device Name]
+            RTCTrim[f003 RTC Trim]
+            MeasCtrl[f010 Measurement Control]
+            SecProf[f008 Security Profile]
+            PMICCtrl[f013 PMIC Control L2]
+        end
+        subgraph CTSSvc["Current Time Service 0x1805"]
+            CTS[0x2A2B Current Time]
+        end
+        subgraph SensorSvc["Sensor Data ...def1"]
+            Vitals[f10b Vitals Notify]
+            Glucose[f105-f108 Glucose Notify]
+            PPGStream[f106 PPG Stream]
+            AccelStream[f10c Accel Stream]
+            SensorAll[f1ff Sensor All v2]
+        end
+        subgraph WiFiSvc["WiFi Config ...def2"]
+            WiFiCred[f202-f203 SSID/PW L2]
+            WiFiStatus[f204 WiFi Status]
+        end
+    end
+
+    subgraph ZephyrBT["Zephyr BLE Stack"]
+        GATTServer[GATT Server]
+        GATTNotify[bt_gatt_notify]
+        SMP[SMP Pairing MITM]
+        Advertising[LE Advertising]
+    end
+
+    subgraph External["Companion"]
+        Monitor[hcm_monitor<br/>apps/pc/]
+    end
+
+    BLEApp --> BLEGatt
+    Producers --> BLEGatt
+    ConfigMgr --> BLEGatt
+
+    BLEGatt --> WearableSvc
+    BLEGatt --> CTSSvc
+    BLEGatt --> SensorSvc
+    BLEGatt --> WiFiSvc
+
+    WearableSvc --> GATTServer
+    SensorSvc --> GATTNotify
+    WiFiSvc --> GATTServer
+
+    GATTServer --> SMP
+    GATTNotify --> SMP
+    SMP --> Advertising
+
+    Advertising <--> Monitor
+    GATTNotify --> Monitor
+
+    classDef app fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
+    classDef char fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef stack fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef external fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+
+    class BLEGatt,BLEApp,Producers,ConfigMgr app
+    class DevName,RTC,MeasCtrl,SecProf,PMICCtrl,Vitals,Glucose,PPGStream,AccelStream,SensorAll,WiFiCred,WiFiStatus char
+    class GATTServer,GATTNotify,SMP,Advertising stack
+    class Monitor external

@@ -1,0 +1,45 @@
+# Copyright (c) 2025
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Maxim MAX20360 PMIC battery charger (datasheet Rev 11).
+
+  Charge voltage (ChgBatReg): 4.05 V–4.60 V in 50 mV steps (ChgCntl0[4:1]).
+  Fast-charge current (IFCHG) is set by the external RISET resistor only
+  (not I²C-programmable). Input current limit: ILimCntl[2:0] eight codes
+  (50/90/150/200/300/400/450/1000 mA).
+
+compatible: "maxim,max20360-charger"
+
+include:
+  - name: battery.yaml
+
+properties:
+  charge-voltage-microvolt:
+    type: int
+    default: 4200000
+    description: |
+      Battery regulation voltage (ChgBatReg), microvolts.
+      Valid range: 4050000–4600000 in 50000 µV steps.
+
+  charge-current-microamp:
+    type: int
+    deprecated: true
+    description: |
+      Deprecated — IFCHG is RISET-only. Prefer riset-ohms; get_prop reports
+      derived IFCHG. This property is ignored by the driver.
+
+  riset-ohms:
+    type: int
+    default: 4000
+    description: |
+      External RISET between ISET and GND (ohms). IFCHG ≈ 2000×1/RISET amperes
+      (e.g. 4000 → 500 mA).
+
+  input-current-limit-microamp:
+    type: int
+    default: 450000
+    description: |
+      CHGIN input current limit (ILimCntl[2:0]).
+      Legal values (µA): 50000, 90000, 150000, 200000, 300000, 400000,
+      450000, 1000000. Nearest code is selected.

@@ -1,0 +1,14 @@
+/* Sensor group: VCNL3040 proximity/ALS */
+&i2c0 {
+	vcnl3040: vcnl3040@60 {
+		compatible = "vishay,vcnl3040";
+		reg = <0x60>;
+		status = "okay";
+		led-current = <2>;
+		duty-cycle = <0>;
+		integration-time = <7>;
+		multi-pulse = <2>;
+		proximity-threshold-low = <500>;
+		proximity-threshold-high = <2000>;
+	};
+};

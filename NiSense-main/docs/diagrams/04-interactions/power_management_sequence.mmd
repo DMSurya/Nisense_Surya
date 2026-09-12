@@ -1,0 +1,55 @@
+%%{init: {'theme': 'base'}}%%
+%% Power management — matches power_mgr.c + battery_low.c (2026-07)
+%% Note: nRF System OFF deep sleep is future work; today = display blank + policy.
+
+sequenceDiagram
+    participant Main as main.c
+    participant PM as power_mgr.c
+    participant PB as power_batt.c
+    participant FG as Fuel gauge @ 0x36
+    participant BL as battery_low.c<br/>PFN2 P1.15
+    participant HS as health_sched.c
+    participant UI as ui.c / display
+    participant BLE as ble.c
+    participant Btn as ui_buttons.c
+
+    Note over Main,PM: Boot
+    Main->>PM: power_mgr_init() after config_manager
+    PM->>BL: battery_low_set_threshold(mV)
+    PM->>PM: schedule poll work (10 s default)
+
+    Note over PM,FG: Periodic battery poll (single I2C owner)
+    loop Every batt_poll_interval_s (default 10 s)
+        PM->>PB: power_batt_snapshot()
+        PB->>FG: fuel_gauge_get_prop (cached 5 s)
+        FG-->>PB: SOC, V, I
+        PB-->>PM: snapshot
+        PM->>PM: evaluate_state (SOC, USB, PFN2)
+        alt SOC ≤ critical (5%) or PFN2 active
+            PM->>UI: display_sleep (blank + backlight off)
+            PM->>HS: health_sched_set_auto_enabled(false)
+        else charging and SOC ≥ resume (20%)
+            PM->>HS: health_sched_set_auto_enabled(true)
+        end
+        PM->>BLE: ble_gatt_set_battery_level (if connected)
+    end
+
+    Note over Main,UI: Display idle (auto_sleep)
+    loop main loop ~20 ms
+        Main->>PM: power_mgr_tick()
+        alt idle ≥ sleep_timeout_s and not critical
+            PM->>UI: display_sleep()
+        end
+    end
+
+    Note over Btn,UI: User wake / navigation
+    Btn->>PM: power_mgr_activity_notify() on touch or PFN1 short
+    PM->>UI: display_wake() + backlight on
+    Btn->>UI: PFN1 short → home screen if already awake
+
+    Note over BL,PM: PMIC battery-low interrupt
+    BL-->>PM: power_mgr_battery_low_event() (work queue)
+    PM->>PM: immediate policy re-evaluate
+
+    Note over BLE,PM: BLE config writes
+    BLE->>PM: power_mgr_apply_config()<br/>(timeout, poll, SOC, hold ms)

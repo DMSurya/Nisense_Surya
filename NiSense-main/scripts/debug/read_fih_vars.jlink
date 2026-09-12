@@ -1,0 +1,5 @@
+connect
+halt
+mem32 0x200004C0 4
+mem32 0x200015F8 2
+exit

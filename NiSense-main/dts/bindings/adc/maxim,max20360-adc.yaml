@@ -1,0 +1,38 @@
+description: |
+  Maxim MAX20360 internal SAR ADC.
+
+  The MAX20360 8-bit SAR ADC lives in the "Haptic Driver and ADC Registers"
+  block at I2C SlaveID 0xA0/0xA1 (7-bit 0x50) — a separate slave from the
+  PMIC register map (7-bit 0x28).  Rail measurements (BAT, SYS, bucks,
+  LDOs, ISET) are routed through the IVMON multiplexer in the PMIC map, so
+  this node needs a phandle to the MAX20360 regulator parent which owns
+  the mux and the PMIC register lock.
+
+  Logical channel IDs are defined in drivers/adc/max20360_adc.h
+  (0=BAT, 1=SYS, 2..8=rails, 9=ISET, 10=VHDIN).  All channels use
+  ADC_REF_INTERNAL (5500 mV full scale, 8-bit).  ADC_GAIN_1_2/1_3/1_4
+  engage the corresponding IVMON divider ratio.
+
+compatible: "maxim,max20360-adc"
+
+include: [adc-controller.yaml, i2c-device.yaml]
+
+properties:
+  reg:
+    required: true
+    description: |
+      I2C address of the haptic/ADC block. Must be 0x50 (7-bit addressing),
+      corresponding to SlaveID 0xA0/0xA1 in 8-bit addressing.
+
+  maxim,pmic:
+    type: phandle
+    required: true
+    description: |
+      MAX20360 regulator parent node (compatible "maxim,max20360-regulator").
+      Used for IVMON multiplexer channel selection.
+
+  "#io-channel-cells":
+    const: 1
+
+io-channel-cells:
+  - input

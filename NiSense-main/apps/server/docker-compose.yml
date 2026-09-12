@@ -1,0 +1,124 @@
+# Base compose (prod-shaped). Use profiles + docker-compose.dev.yml for dev.
+#
+#   Pi/prod : docker compose --profile prod up -d
+#   dev     : docker compose -f docker-compose.yml -f docker-compose.dev.yml \
+#             --profile dev up
+#
+# Only the Caddy reverse proxy is meant to be exposed publicly (443/80). The DB,
+# Keycloak and API stay on the internal network (reach via SSH tunnel in dev).
+
+name: nisense
+
+x-dns: &default-dns
+  dns:
+    - 8.8.8.8
+    - 1.1.1.1
+
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    <<: *default-dns
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nisense}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nisense}
+      POSTGRES_DB: ${POSTGRES_DB:-nisense}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    # Not published to the host by default; use `ssh -L 5432:localhost:5432`.
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nisense}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    restart: unless-stopped
+    <<: *default-dns
+    # Avoid --optimized (needs a prior `kc.sh build`). Relative path /auth matches Caddy.
+    command: ["start", "--import-realm", "--http-enabled=true", "--hostname-strict=false"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-nisense}
+      KC_DB_USERNAME: ${POSTGRES_USER:-nisense}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-nisense}
+      KC_HOSTNAME: ${KC_HOSTNAME:-mpsaami.ddns.net}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      # Pi-friendly heap (~905 MiB host). Raise on cloud hosts.
+      JAVA_OPTS_KC_HEAP: ${JAVA_OPTS_KC_HEAP:--Xms64m -Xmx256m}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    volumes:
+      # Prefer rendered realm (IdP secrets substituted); fall back to template.
+      - ./keycloak/import:/opt/keycloak/data/import:ro
+    expose:
+      - "8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["prod", "keycloak"]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  api:
+    build:
+      context: .
+      # Pi Docker bridge DNS is unreliable; build uses the host resolver.
+      network: host
+    restart: unless-stopped
+    <<: *default-dns
+    env_file: .env
+    environment:
+      NISENSE_DATABASE_URL: >-
+        postgresql+psycopg2://${POSTGRES_USER:-nisense}:${POSTGRES_PASSWORD:-nisense}@db:5432/${POSTGRES_DB:-nisense}
+      NISENSE_OIDC_ISSUER: ${NISENSE_OIDC_ISSUER:-https://mpsaami.ddns.net/auth/realms/nisense}
+      # First bring-up convenience: create tables + seed when env=dev.
+      NISENSE_ENV: ${NISENSE_ENV:-dev}
+    volumes:
+      - artifact_data:/data/artifacts
+      - key_data:/data/keys
+    # Local smoke-test / SSH tunnel (not published on the router).
+    ports:
+      - "127.0.0.1:8000:8000"
+    expose:
+      - "8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    <<: *default-dns
+    # The only publicly forwarded ports (router -> Pi): 80 (ACME) + 443 (HTTPS).
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web-dist:/srv/web:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    profiles: ["prod"]
+
+volumes:
+  db_data:
+  artifact_data:
+  key_data:
+  caddy_data:
+  caddy_config:

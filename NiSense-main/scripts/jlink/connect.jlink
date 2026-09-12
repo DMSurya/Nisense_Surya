@@ -1,0 +1,7 @@
+device nRF52840_xxAA
+si swd
+speed 4000
+connect
+r
+g
+exit

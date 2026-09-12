@@ -1,0 +1,10 @@
+connect
+reset
+halt
+SetBP 0x0001C0B8 A
+g
+sleep 8000
+halt
+r
+mem32 0x40000400 1
+exit

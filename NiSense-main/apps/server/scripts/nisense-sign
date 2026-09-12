@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Sign a packed glucose model image with the Ed25519 private key on this host.
+# The private key never leaves the Pi; remote machines invoke this over SSH:
+#
+#   ssh -i ~/.ssh/id_ed25519 ponmadasamy@mpsaami.ddns.net \
+#       'apps/server/scripts/nisense-sign' < glucose_model_wearable.bin > model.sig.b64
+#
+# Reads the image from stdin (or $1), writes base64(signature) to stdout.
+set -euo pipefail
+
+KEY="${NISENSE_MODEL_KEY:-/data/keys/model_ed25519.pem}"
+[ -f "$KEY" ] || { echo "signing key not found: $KEY" >&2; exit 1; }
+
+TMP="$(mktemp)"
+trap 'rm -f "$TMP" "$TMP.sig"' EXIT
+
+if [ "${1:-}" = "" ]; then
+    cat > "$TMP"
+else
+    cp "$1" "$TMP"
+fi
+
+# Ed25519 signs the message directly (rawin), no pre-hash.
+openssl pkeyutl -sign -inkey "$KEY" -rawin -in "$TMP" -out "$TMP.sig"
+base64 -w0 "$TMP.sig"
+echo

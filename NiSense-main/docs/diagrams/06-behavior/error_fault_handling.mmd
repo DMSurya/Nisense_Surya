@@ -1,0 +1,150 @@
+%%{init: {'theme': 'base'}}%%
+%% =============================================================================
+%% ERROR AND FAULT HANDLING DIAGRAM
+%% =============================================================================
+%% Purpose: Shows error detection, handling, and recovery mechanisms
+%% Scope: All error types from transient to fatal
+%% Assumptions:
+%%   - Hierarchical error handling
+%%   - Retry logic for transient errors
+%%   - Do not auto-reformat userdata on flaky BPB reads (ops/Storage UI only)
+%%   - Fatal errors trigger reboot after logging
+%% Updated: 2026-07-17
+%% =============================================================================
+
+graph TB
+    subgraph "Error Sources"
+        subgraph "Hardware Errors"
+            I2C_NAK[I2C NACK<br/>Device not responding]
+            I2C_TIMEOUT[I2C Timeout<br/>Bus stuck]
+            SPI_ERR[SPI Error<br/>Transfer failed]
+            ADC_ERR[ADC Error<br/>Conversion failed]
+        end
+
+        subgraph "Sensor Errors"
+            SENSOR_INIT[Sensor Init Failed<br/>Device not found]
+            SENSOR_DATA[Invalid Data<br/>Out of range]
+            SENSOR_OFFLINE[Sensor Offline<br/>Communication lost]
+            VARIANT_MISMATCH[Variant Mismatch<br/>Wrong MAX32664 mode]
+        end
+
+        subgraph "Storage Errors"
+            REC_FULL[record_store full<br/>oldest reclaim or drop]
+            REC_WRITE[record_store write fail<br/>QSPI busy or I/O]
+            QSPI_BUSY[nor_qspi_busy<br/>UI skips refresh]
+            NVS_ERR[NVS Error<br/>Config corrupt]
+        end
+
+        subgraph "Communication Errors"
+            BLE_DISC[BLE Disconnect<br/>Connection lost]
+            WIFI_FAIL[Wi-Fi Failed<br/>No network]
+            USB_ERR[USB Error<br/>Enumeration failed]
+        end
+
+        subgraph "System Errors"
+            STACK_OVF[Stack Overflow<br/>MPU Guard triggered]
+            HEAP_EXHAUST[Heap Exhausted<br/>malloc failed]
+            WATCHDOG[Watchdog Timeout<br/>System hung]
+            HARDFAULT[HardFault<br/>Invalid memory access]
+        end
+    end
+
+    subgraph "Error Handlers"
+        subgraph "Transient Handler"
+            RETRY_1[Retry Logic<br/>Max 3 attempts]
+            BACKOFF[Exponential Backoff<br/>100ms, 200ms, 400ms]
+        end
+
+        subgraph "Recoverable Handler"
+            REINIT[Reinitialize<br/>Device/Subsystem]
+            FALLBACK[Fallback Mode<br/>Reduced functionality]
+            USER_NOTIFY[User Notification<br/>UI Alert]
+        end
+
+        subgraph "Fatal Handler"
+            LOG_FAULT[Log Fault Info<br/>RTT + NVS]
+            SAVE_STATE[Save Critical State<br/>Persist to NVS]
+            CONTROLLED_RESET[Controlled Reset<br/>sys_reboot]
+        end
+    end
+
+    subgraph "Recovery Actions"
+        BUS_RESET[I2C Bus Reset<br/>Toggle SCL]
+        SENSOR_RESET[Sensor Reset<br/>Power cycle]
+        REC_RECLAIM[record_store reclaim<br/>ack_or_reset_slots]
+        RECONNECT[Reconnect<br/>BLE/WiFi]
+        FULL_REBOOT[Full Reboot<br/>MCUboot reset]
+    end
+
+    subgraph "Degraded Modes"
+        NO_LOGGING[No Logging Mode<br/>Storage failed]
+        NO_BLE[No BLE Mode<br/>Stack failed]
+        NO_WIFI[No WiFi Mode<br/>Module failed]
+        SENSOR_SUBSET[Partial Sensors<br/>Some offline]
+    end
+
+    %% Transient errors
+    I2C_NAK --> RETRY_1
+    I2C_TIMEOUT --> RETRY_1
+    SPI_ERR --> RETRY_1
+    ADC_ERR --> RETRY_1
+    SENSOR_DATA --> RETRY_1
+    
+    RETRY_1 --> BACKOFF
+    BACKOFF -->|Success| NORMAL[Normal Operation]
+    BACKOFF -->|Max Retries| REINIT
+
+    %% Recoverable errors
+    SENSOR_INIT --> REINIT
+    SENSOR_OFFLINE --> REINIT
+    VARIANT_MISMATCH --> USER_NOTIFY
+    REC_FULL --> USER_NOTIFY
+    REC_WRITE --> RETRY
+    QSPI_BUSY --> USER_NOTIFY
+    NVS_ERR --> REINIT
+    BLE_DISC --> RECONNECT
+    WIFI_FAIL --> RECONNECT
+    USB_ERR --> REINIT
+
+    REINIT -->|Success| NORMAL
+    REINIT -->|Fail| FALLBACK
+    REC_RECLAIM -->|Success| NORMAL
+    REC_RECLAIM -->|Fail| NO_LOGGING
+    RECONNECT -->|Success| NORMAL
+    RECONNECT -->|Fail| FALLBACK
+
+    %% Fallback to degraded
+    FALLBACK --> SENSOR_SUBSET
+    FALLBACK --> NO_LOGGING
+    FALLBACK --> NO_BLE
+    FALLBACK --> NO_WIFI
+
+    %% Fatal errors
+    STACK_OVF --> LOG_FAULT
+    HEAP_EXHAUST --> LOG_FAULT
+    WATCHDOG --> LOG_FAULT
+    HARDFAULT --> LOG_FAULT
+
+    LOG_FAULT --> SAVE_STATE
+    SAVE_STATE --> CONTROLLED_RESET
+    CONTROLLED_RESET --> FULL_REBOOT
+
+    %% Recovery actions
+    REINIT --> BUS_RESET
+    REINIT --> SENSOR_RESET
+    BUS_RESET --> SENSOR_RESET
+    SENSOR_RESET -->|Success| NORMAL
+    SENSOR_RESET -->|Fail| SENSOR_SUBSET
+
+    %% Styling
+    classDef error fill:#ffcdd2,stroke:#c62828,stroke-width:2px
+    classDef handler fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef recovery fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
+    classDef degraded fill:#e1bee7,stroke:#8e24aa,stroke-width:2px
+    classDef normal fill:#bbdefb,stroke:#1565c0,stroke-width:2px
+
+    class I2C_NAK,I2C_TIMEOUT,SPI_ERR,ADC_ERR,SENSOR_INIT,SENSOR_DATA,SENSOR_OFFLINE,VARIANT_MISMATCH,REC_FULL,REC_WRITE,QSPI_BUSY,NVS_ERR,BLE_DISC,WIFI_FAIL,USB_ERR,STACK_OVF,HEAP_EXHAUST,WATCHDOG,HARDFAULT error
+    class RETRY_1,BACKOFF,REINIT,FALLBACK,USER_NOTIFY,LOG_FAULT,SAVE_STATE,CONTROLLED_RESET handler
+    class BUS_RESET,SENSOR_RESET,REC_RECLAIM,RECONNECT,FULL_REBOOT recovery
+    class NO_LOGGING,NO_BLE,NO_WIFI,SENSOR_SUBSET degraded
+    class NORMAL normal

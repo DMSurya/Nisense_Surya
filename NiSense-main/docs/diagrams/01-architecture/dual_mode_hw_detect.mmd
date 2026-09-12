@@ -1,0 +1,32 @@
+%%{init: {'theme': 'base'}}%%
+%% =============================================================================
+%% PRODUCT HW DETECT (Watch vs Pulse)
+%% =============================================================================
+%% Purpose: Single runtime SKU for PPG, glucose model entry, BLE name
+%% Code: product_hw_detect() — hub ready + variant C → WATCH, else PULSE
+%% Updated: 2026-07-29
+%% =============================================================================
+
+flowchart TD
+    Boot[Boot_after_power_init] --> Det[product_hw_detect]
+
+    Det -->|hub_ready_and_variant_C| Watch[PRODUCT_HW_WATCH]
+    Det -->|else| Pulse[PRODUCT_HW_PULSE]
+
+    Watch --> PpgW[PPG_exclusive_C_or_86141]
+    Watch --> ModW[Model_pack_entry_glucose_wearable]
+    Watch --> BleW[BLE_name_Watch]
+
+    Pulse --> PpgP[PPG_exclusive_3010x_or_hub_D]
+    Pulse --> ModP[Model_pack_entry_glucose_pulse]
+    Pulse --> BleP[BLE_name_Pulse]
+
+    PpgW --> Shared[Shared_firmware_image]
+    PpgP --> Shared
+    ModW --> Shared
+    ModP --> Shared
+    BleW --> Shared
+    BleP --> Shared
+
+    Shared --> Res[Resource_AB_UI_fonts_icons]
+    Shared --> Pack[Model_AB_pack_both_GMDL_in_NOR]

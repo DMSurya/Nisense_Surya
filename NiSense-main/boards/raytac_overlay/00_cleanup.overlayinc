@@ -1,0 +1,15 @@
+/* Delete unused/conflicting nodes from base DTS */
+
+/* Delete conflicting button nodes (GPIO conflicts with our hardware) */
+/delete-node/ &button0;  /* P0.11 - unused */
+/delete-node/ &button1;  /* P0.12 - used for buzzer PWM */
+/delete-node/ &button2;  /* P0.24 - used for glucose IR LED */
+/delete-node/ &button3;  /* P0.25 - unused */
+
+/* Delete conflicting LEDs (GPIO conflicts with I2C0 pins) */
+/delete-node/ &led0;     /* P0.13 - used for I2C0 SDA */
+/delete-node/ &led1;     /* P0.14 - used for I2C0 SCL */
+/delete-node/ &led2;     /* P0.15 - unused */
+
+/* Delete PWM LED (conflicts with I2C0) */
+/delete-node/ &pwm_led0;

@@ -1,0 +1,10 @@
+/* Sensor group: MAX30208 wearable temperature */
+&i2c0 {
+	max30208: max30208@53 {
+		compatible = "maxim,max30208";
+		reg = <0x53>;
+		status = "okay";
+		int-gpios = <&gpio1 2 GPIO_ACTIVE_LOW>;
+		fifo-samples = <4>;
+	};
+};

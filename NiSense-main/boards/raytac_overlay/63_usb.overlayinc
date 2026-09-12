@@ -1,0 +1,7 @@
+/* USB group — nRF USBD controller.
+ * Nodename label zephyr_udc0 is required by Zephyr USB-next / CDC samples.
+ */
+zephyr_udc0: &usbd {
+	compatible = "nordic,nrf-usbd";
+	status = "okay";
+};

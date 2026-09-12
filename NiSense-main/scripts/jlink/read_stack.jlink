@@ -1,0 +1,25 @@
+connect
+halt
+// Exception stack frame from MSP (0x200032A8)
+// ARM Cortex-M exception frame layout:
+// SP+0  = R0
+// SP+4  = R1
+// SP+8  = R2
+// SP+12 = R3
+// SP+16 = R12
+// SP+20 = LR (return address)
+// SP+24 = PC (faulting instruction)
+// SP+28 = xPSR
+mem32 0x200032A8 8
+
+// Also check PSP area (thread stack at 0x20003670)
+mem32 0x20003670 16
+
+// Check what's at the address we were told (0x5EC8)
+mem32 0x5EC8 4
+
+// Check VTOR again
+mem32 0xE000ED08 1
+
+exit
+

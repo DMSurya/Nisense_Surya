@@ -1,0 +1,112 @@
+/* ADC group: glucose analog input */
+&adc {
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	/* INA122UA connected to P0.03 (AIN1) */
+	channel@1 {
+		reg = <1>;
+		/*
+		 * SAADC gain (attenuation), NOT the INA122's gain — see
+		 * ADC_GAIN_MULTIPLIER in glucose_sensor.c, which MUST be
+		 * kept as the reciprocal of whatever fraction is set here
+		 * (that constant undoes this attenuation when converting
+		 * raw counts to mV for logging/quality metrics; the
+		 * glucose regression itself uses raw counts directly and
+		 * is unaffected by that constant, but very much affected
+		 * by changing this line — see the long comment in
+		 * glucose_sensor.c above ADC_GAIN_MULTIPLIER).
+		 *
+		 * With 0.6V internal reference, full-scale input voltage
+		 * for each option (12-bit, ADC_MAX_VALUE=4095 counts):
+		 *   ADC_GAIN_1_6 -> FS 3.6V  (multiplier 6.0f)
+		 *   ADC_GAIN_1_5 -> FS 3.0V  (multiplier 5.0f)
+		 *   ADC_GAIN_1_4 -> FS 2.4V  (multiplier 4.0f) [current]
+		 *   ADC_GAIN_1_3 -> FS 1.8V  (multiplier 3.0f) -- do not
+		 *     use with this signal chain: the observed analog input
+		 *     is already ~1.9V at the old 1/6 setting, i.e. already
+		 *     above a 1.8V full-scale -> guaranteed ADC saturation.
+		 *
+		 * Measured with ADC_GAIN_1_6 (original): raw ADC ~2170
+		 * counts (~53% of full scale, ~1.9V). Now set to
+		 * ADC_GAIN_1_4 to land around ~3260 counts (~80% of full
+		 * scale), above the requested 3000 floor.
+		 *
+		 * IMPORTANT — headroom tradeoff, please read before going
+		 * further: ~80% is right at the ceiling of the 50-80% window
+		 * GLUCOSE_AFE_REVIEW.md recommends for SNR/headroom (see
+		 * GLUCOSE_SENSOR_FLAG_OUT_OF_WINDOW in glucose_sensor.c,
+		 * which will start flagging readings here if the signal
+		 * drifts up at all — that's expected at this setting, not a
+		 * new bug). There is very little margin left before ADC
+		 * saturation (4095) if the real signal varies upward for any
+		 * reason (different contact pressure, different skin, small
+		 * temperature drift). Saturation is worse than being
+		 * under-range: a pinned-at-rail reading can't show the
+		 * signal moving at all. If you see GLUCOSE_SENSOR_FLAG_
+		 * SATURATION start appearing in logs after this change,
+		 * that's this margin running out — step back to
+		 * ADC_GAIN_1_5 (~2600 counts, comment above) rather than
+		 * pushing further toward ADC_GAIN_1_3, which this signal
+		 * chain cannot use at all (see note above).
+		 *
+		 * IMPORTANT: this changes the numeric scale of the raw ADC
+		 * counts fed into the glucose regression
+		 * (glucose_intercept() in glucose_sensor.c operates on raw
+		 * counts, not mV). The existing regression constants
+		 * (intercept=161.832, k=1.75 — see
+		 * algorithm-intercept-constant / algorithm-outlier-k-factor
+		 * below) were derived against the OLD ~2170-count range.
+		 * Moving to ~3260 counts is not a free change — treat the
+		 * mg/dL output as needing re-validation against a reference
+		 * measurement at this new operating point, not as
+		 * automatically "more accurate" just because it uses more
+		 * of the ADC's range.
+		 */
+		zephyr,gain = "ADC_GAIN_1_4";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,input-positive = <NRF_SAADC_AIN1>; /* P0.03 */
+		zephyr,resolution = <12>;
+	};
+};
+
+/* Sensor group: glucose virtual sensor */
+&{/} {
+	glucose_sensor: glucose-sensor {
+		compatible = "glucose-sensor";
+		status = "okay";
+
+		/* IR LED control GPIO - P0.24, active high */
+		ir-led-gpios = <&gpio0 24 GPIO_ACTIVE_HIGH>;
+
+		/* ADC channel for glucose signal (AIN1 = P0.03) */
+		io-channels = <&adc 1>;
+
+		/* Glucose Measurement Configuration
+		 * AFE: docs/sensors/GLUCOSE_ANALOG_FRONTEND.md
+		 * LEDs SMC1550(1550)+SMC1050(1050) parallel on IRLED_POWER;
+		 * OPA358 Rf=10MΩ Cf≈0.8pF; INA122 RG shorted to GND; REF=GND
+		 */
+		num-samples = <80>;          /* ADC samples per measurement (algo requires 80) */
+		led-delay-ms = <2000>;       /* LED stabilization delay before sampling (ms) */
+		sample-rate-hz = <2>;        /* 2 Hz = 500 ms between samples (~40 s lit capture) */
+
+		/* Calibration Parameters (set during calibration procedure) */
+		calibration-offset-mv = <0>;  /* Photodiode dark current offset (mV) */
+		calibration-gain = <1000>;    /* Gain correction (1000 = 1.0x, stored as integer) */
+
+		/* Glucose Algorithm Configuration */
+		algorithm-intercept-constant = <161832>;  /* Fixed-point: 161.832 * 1000 */
+		algorithm-outlier-k-factor = <1750>;      /* Fixed-point: 1.75 * 1000 */
+		glucose-normalization-divisor = <18>;     /* Divisor for mmol/L normalization */
+
+		/* Insulin Resistance (HOMA-IR) Configuration */
+		homa-ir-divisor = <405>;                  /* Standard HOMA-IR divisor */
+		insulin-calibration-adjustment = <1050>;  /* Fixed-point: 1.05 * 1000 */
+		homa-ir-threshold-optimal = <1000>;       /* Fixed-point: 1.0 * 1000 */
+		homa-ir-threshold-normal = <2000>;        /* Fixed-point: 2.0 * 1000 */
+		homa-ir-threshold-moderate = <3000>;      /* Fixed-point: 3.0 * 1000 */
+	};
+};

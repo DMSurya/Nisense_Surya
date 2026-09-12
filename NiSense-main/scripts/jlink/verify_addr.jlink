@@ -1,0 +1,24 @@
+connect
+halt
+
+// Read memory at 0x129F5 - is this valid code or data?
+mem32 0x129F0 4
+
+// Read what the app's vector table looks like at 0xA200
+mem32 0xA200 8
+
+// Read MCUboot's vector table at 0x0
+mem32 0x0 8
+
+// Check actual VTOR
+mem32 0xE000ED08 1
+
+// Let's trace back the call chain more carefully
+// PSP stacked PC was 0x5EC8
+// PSP stacked LR was 0xF5B
+
+// What called 0xF5B? Read more of PSP stack
+mem32 0x20003690 32
+
+exit
+

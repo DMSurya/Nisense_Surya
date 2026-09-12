@@ -1,0 +1,128 @@
+%%{init: {'theme': 'base'}}%%
+%% =============================================================================
+%% PPG/SpO2 DRIVER COMPONENT DIAGRAM
+%% =============================================================================
+%% Purpose: Shows the MAX32664 sensor hub driver architecture with variants
+%% Scope: Driver files, Zephyr sensor API integration, mode switching
+%% Assumptions:
+%%   - HUB mode is current (CONFIG_MAX32664_MODE_HUB=y)
+%%   - Variants A/B/C/D auto-detected at runtime
+%%   - Out-of-tree driver under drivers/sensor/max32664/
+%% =============================================================================
+
+graph TB
+    subgraph "Application Layer (src/)"
+        SPO2UI[spo2_ui.c<br/>SpO2 Screen]
+        HRUI[hr_ui.c<br/>HR Screen]
+    end
+
+    subgraph "Zephyr Sensor API"
+        SensorAPI[sensor_sample_fetch<br/>sensor_channel_get<br/>sensor_attr_set<br/>sensor_trigger_set]
+    end
+
+    subgraph "MAX32664 Driver (drivers/sensor/max32664/)"
+        subgraph "Core Driver"
+            Max32664Core[max32664.c<br/>Main Driver<br/>Init, Mode Dispatch]
+            Max32664Priv[max32664_priv.h<br/>Private Data Structures]
+            Max32664Kconfig[Kconfig<br/>Mode Selection]
+        end
+
+        subgraph "Mode Handlers"
+            HubMode[max32664_algo.c<br/>HUB Mode<br/>Hub Algorithms]
+            RawMode[max32664_raw.c<br/>RAW Mode<br/>Raw PPG Samples]
+            PassMode[max32664_passthrough.c<br/>PASSTHROUGH Mode<br/>Register Access]
+        end
+
+        subgraph "Variant Implementations"
+            VariantA[max32664a.c<br/>MaximFast<br/>HR + SpO2]
+            VariantB[max32664b.c<br/>WHRM<br/>Heart Rate Only]
+            VariantC[max32664c.c<br/>WHRM+WSpO2<br/>Wrist Algorithms]
+            VariantD[max32664d.c<br/>BPT<br/>Blood Pressure]
+        end
+
+        subgraph "Peripheral Access"
+            AFEAccess[max32664_afe.c<br/>AFE Register R/W<br/>MAX86141/MAX30101]
+            AccelAccess[max32664_accel.c<br/>Accel Register R/W<br/>LIS2DS12/KX-122]
+        end
+
+        subgraph "Child Sensors (PASSTHROUGH)"
+            PPGSensor[max86141_ppg.c<br/>PPG Sensor Device<br/>Sample Fetch]
+            AccelSensor[lis2ds12_accel.c<br/>Accel Sensor Device<br/>XYZ Reading]
+        end
+    end
+
+    subgraph "PPG Algorithm (subsys/ppg_algo/)"
+        PPGAlgoCore[ppg_algo.c<br/>HR/SpO2 Algorithm<br/>Software Computation]
+        PPGAlgoAPI[ppg_algo.h<br/>Algorithm API]
+        PPGAlgoSensorSPO2[ppg_algo_sensor.c<br/>SpO2 Instance]
+        PPGAlgoSensorHR[ppg_algo_sensor.c<br/>HR Instance]
+    end
+
+    subgraph "Hardware"
+        I2C1[I2C1 Bus<br/>400kHz]
+        MAX32664[MAX32664 IC<br/>Sensor Hub<br/>0x55]
+        MAX86141[MAX86141 AFE<br/>PPG Frontend<br/>via Hub I2C]
+        LIS2DS12[LIS2DS12<br/>Accelerometer<br/>via Hub I2C]
+    end
+
+    %% Application flow
+    SPO2UI --> SensorAPI
+    HRUI --> SensorAPI
+
+    %% Sensor API to driver
+    SensorAPI --> Max32664Core
+    SensorAPI --> PPGSensor
+    SensorAPI --> AccelSensor
+    SensorAPI --> PPGAlgoSensorSPO2
+    SensorAPI --> PPGAlgoSensorHR
+
+    %% Core driver dispatch
+    Max32664Core --> Max32664Priv
+    Max32664Core --> HubMode
+    Max32664Core --> RawMode
+    Max32664Core --> PassMode
+
+    %% Mode to variant
+    HubMode --> VariantA
+    HubMode --> VariantB
+    HubMode --> VariantC
+    HubMode --> VariantD
+
+    %% Passthrough to child sensors
+    PassMode --> PPGSensor
+    PassMode --> AccelSensor
+
+    %% Child sensors to peripheral access
+    PPGSensor --> AFEAccess
+    AccelSensor --> AccelAccess
+
+    %% Algorithm integration
+    PPGSensor --> PPGAlgoSensorSPO2
+    PPGSensor --> PPGAlgoSensorHR
+    AccelSensor --> PPGAlgoSensorSPO2
+    AccelSensor --> PPGAlgoSensorHR
+    PPGAlgoSensorSPO2 --> PPGAlgoCore
+    PPGAlgoSensorHR --> PPGAlgoCore
+
+    %% Hardware access
+    AFEAccess --> I2C1
+    AccelAccess --> I2C1
+    Max32664Core --> I2C1
+    I2C1 --> MAX32664
+    MAX32664 -.->|I2C Bridge| MAX86141
+    MAX32664 -.->|I2C Bridge| LIS2DS12
+
+    %% Styling
+    classDef app fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
+    classDef api fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef core fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef mode fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    classDef variant fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    classDef hw fill:#cfd8dc,stroke:#455a64,stroke-width:2px
+
+    class SPO2UI,HRUI app
+    class SensorAPI api
+    class Max32664Core,Max32664Priv,Max32664Kconfig,AFEAccess,AccelAccess,PPGSensor,AccelSensor,PPGAlgoSensorSPO2,PPGAlgoSensorHR core
+    class HubMode,RawMode,PassMode mode
+    class VariantA,VariantB,VariantC,VariantD variant
+    class I2C1,MAX32664,MAX86141,LIS2DS12 hw

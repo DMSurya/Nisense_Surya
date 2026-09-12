@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Attach: NiSense API (debugpy in container)",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": { "host": "127.0.0.1", "port": 5678 },
+      "pathMappings": [
+        { "localRoot": "${workspaceFolder}/apps/server", "remoteRoot": "/app" }
+      ],
+      "justMyCode": false,
+      "comment": "Run './scripts/dev.sh up' (locally or over Remote-SSH to the Pi with 'ssh -L 5678:localhost:5678'), then attach."
+    }
+  ]
+}

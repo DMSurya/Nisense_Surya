@@ -1,0 +1,12 @@
+r
+SetBP 0x6DD8
+g
+Sleep 3500
+h
+regs
+g
+Sleep 100
+h
+regs
+q
+

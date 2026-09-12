@@ -1,0 +1,23 @@
+%%{init: {'theme': 'base'}}%%
+%% health_sched cycle → loggers → record_store — 2026-07-21
+
+sequenceDiagram
+    participant HS as health_sched
+    participant UI as UI_overlay
+    participant PPG as ppg_algo
+    participant Gluc as glucose
+    participant Temp as temp
+    participant Log as loggers
+    participant Store as record_store
+
+    HS->>UI: measure_start_overlay
+    HS->>PPG: start_measurement
+    PPG-->>HS: vitals_result
+    HS->>Gluc: trigger_measurement
+    Gluc-->>HS: glucose_result
+    HS->>Temp: read_wrist
+    Temp-->>HS: temp_C
+    HS->>Log: persist_results
+    Log->>Store: append_summaries_and_raw
+    Store-->>Log: record_ids
+    HS->>UI: measure_done

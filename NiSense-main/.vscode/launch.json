@@ -1,0 +1,135 @@
+{
+    "version":   "0.2.0",
+"configurations":   [
+                           {
+                               "name":   "Debug with Ozone (Preferred)",
+"type":   "cppdbg",
+"request":   "launch",
+"program":   "${workspaceFolder}/build_sdk_v330/NiSense/zephyr/zephyr.elf",
+"args":   [
+
+                                        ],
+"stopAtEntry":   false,
+"cwd":   "${workspaceFolder}",
+"environment":   [
+
+                                               ],
+"externalConsole":   false,
+"MIMode":   "gdb",
+"miDebuggerPath":   "",
+"miDebuggerServerAddress":   "",
+"targetArchitecture":   "arm",
+"preLaunchTask":   "Launch Ozone",
+"setupCommands":   [
+
+                                                 ],
+"customLaunchSetupCommands":   [
+
+                                                             ],
+"launchCompleteCommand":   "none"
+                           },
+{
+                               "name":   "Smart Debug with Dual RTT",
+"type":   "cppdbg",
+"request":   "launch",
+"program":   "${workspaceFolder}/build_sdk_v330/NiSense/zephyr/zephyr.elf",
+"args":   [
+
+                                        ],
+"stopAtEntry":   true,
+"cwd":   "${workspaceFolder}",
+"environment":   [
+
+                                               ],
+"externalConsole":   false,
+"MIMode":   "gdb",
+"miDebuggerPath":   "C:/ncs/toolchains/0b393f9e1b/opt/zephyr-sdk/arm-zephyr-eabi/bin/arm-zephyr-eabi-gdb.exe",
+"miDebuggerServerAddress":   "localhost:2331",
+"targetArchitecture":   "arm",
+"preLaunchTask":   "Smart Debug Setup",
+"setupCommands":   [
+                                                     {
+                                                         "text":   "set confirm off",
+"description":   "Disable confirmation prompts"
+                                                     }
+                                                 ]
+                           },
+{
+                               "name":   "Smart Debug with RTT",
+"type":   "cppdbg",
+"request":   "launch",
+"program":   "${workspaceFolder}/build_sdk_v330/NiSense/zephyr/zephyr.elf",
+"args":   [
+
+                                        ],
+"stopAtEntry":   true,
+"cwd":   "${workspaceFolder}",
+"environment":   [
+
+                                               ],
+"externalConsole":   false,
+"MIMode":   "gdb",
+"miDebuggerPath":   "C:/ncs/toolchains/0b393f9e1b/opt/zephyr-sdk/arm-zephyr-eabi/bin/arm-zephyr-eabi-gdb.exe",
+"miDebuggerServerAddress":   "localhost:2331",
+"targetArchitecture":   "arm",
+"preLaunchTask":   "Smart Debug Setup (Single RTT)",
+"setupCommands":   [
+                                                     {
+                                                         "text":   "set confirm off",
+"description":   "Disable confirmation prompts"
+                                                     }
+                                                 ]
+                           },
+{
+                               "name":   "Flash and Debug (No RTT)",
+"type":   "cppdbg",
+"request":   "launch",
+"program":   "${workspaceFolder}/build_sdk_v330/NiSense/zephyr/zephyr.elf",
+"args":   [
+
+                                        ],
+"stopAtEntry":   true,
+"cwd":   "${workspaceFolder}",
+"environment":   [
+
+                                               ],
+"externalConsole":   false,
+"MIMode":   "gdb",
+"miDebuggerPath":   "C:/ncs/toolchains/0b393f9e1b/opt/zephyr-sdk/arm-zephyr-eabi/bin/arm-zephyr-eabi-gdb.exe",
+"miDebuggerServerAddress":   "localhost:2331",
+"targetArchitecture":   "arm",
+"preLaunchTask":   "Check and Start GDB Server",
+"setupCommands":   [
+                                                     {
+                                                         "text":   "set confirm off",
+"description":   "Disable confirmation prompts"
+                                                     }
+                                                 ]
+                           },
+{
+                               "name":   "Attach Only (No Flash)",
+"type":   "cppdbg",
+"request":   "launch",
+"program":   "${workspaceFolder}/build_sdk_v330/NiSense/zephyr/zephyr.elf",
+"args":   [
+
+                                        ],
+"stopAtEntry":   false,
+"cwd":   "${workspaceFolder}",
+"environment":   [
+
+                                               ],
+"externalConsole":   false,
+"MIMode":   "gdb",
+"miDebuggerPath":   "C:/ncs/toolchains/0b393f9e1b/opt/zephyr-sdk/arm-zephyr-eabi/bin/arm-zephyr-eabi-gdb.exe",
+"miDebuggerServerAddress":   "localhost:2331",
+"targetArchitecture":   "arm",
+"setupCommands":   [
+                                                     {
+                                                         "text":   "set confirm off",
+"description":   "Disable confirmation prompts"
+                                                     }
+                                                 ]
+                           }
+                       ]
+}

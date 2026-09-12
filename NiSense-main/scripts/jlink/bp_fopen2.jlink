@@ -1,0 +1,15 @@
+r
+SetBP 0x1328
+g
+Sleep 3500
+h
+regs
+mem32 0x2000026C 1
+s
+regs
+s
+regs
+s
+regs
+q
+

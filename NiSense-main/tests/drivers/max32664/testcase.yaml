@@ -1,0 +1,11 @@
+tests:
+  drivers.max32664.status:
+    tags:
+      - drivers
+      - sensor
+    platform_allow:
+      - native_sim
+      - unit_testing
+    integration_platforms:
+      - native_sim
+    harness: ztest

@@ -1,0 +1,153 @@
+# SPDX-License-Identifier: Apache-2.0
+# Wi-Fi driver configuration
+
+menuconfig WIFI_WEXX
+	bool "WExx Wi-Fi Module Driver"
+	depends on SERIAL && GPIO && WIFI
+	select RING_BUFFER
+	select WIFI_OFFLOAD
+	select NET_L2_WIFI_MGMT
+	select NET_OFFLOAD
+	help
+	  Enable driver for WE10/WE20D Wi-Fi modules with ASCII AT command interface.
+	  Integrates with Zephyr's Wi-Fi management ecosystem (NET_L2_WIFI_MGMT).
+	  Supports Wi-Fi STA mode with scan, connect, and disconnect operations.
+
+if WIFI_WEXX
+
+config WIFI_WEXX_INIT_PRIORITY
+	int "WExx driver initialization priority"
+	default 80
+	help
+	  Driver initialization priority for WExx Wi-Fi module.
+
+config WIFI_WEXX_RX_BUF_SIZE
+	int "UART receive ring buffer size"
+	default 1024
+	help
+	  Size of the receive ring buffer for UART communication.
+
+config WIFI_WEXX_TX_BUF_SIZE
+	int "UART transmit buffer size"
+	default 512
+	help
+	  Maximum size of a single command. Reduced for RAM constraints.
+
+config WIFI_WEXX_RESPONSE_TIMEOUT_MS
+	int "Command response timeout in milliseconds"
+	default 5000
+	help
+	  Timeout for waiting for a response after sending a command.
+
+config WIFI_WEXX_CONNECT_TIMEOUT_MS
+	int "Wi-Fi connection timeout in milliseconds"
+	default 30000
+	help
+	  Timeout for Wi-Fi connection to complete.
+
+config WIFI_WEXX_MAX_SSID_LEN
+	int "Maximum SSID length"
+	default 32
+	help
+	  Maximum length of SSID string.
+
+config WIFI_WEXX_MAX_PASSWORD_LEN
+	int "Maximum password length"
+	default 64
+	help
+	  Maximum length of Wi-Fi password.
+
+config WIFI_WEXX_MAX_SCAN_RESULTS
+	int "Maximum number of scan results"
+	default 10
+	help
+	  Maximum number of access points to store during scan.
+
+config WIFI_WEXX_WORKQUEUE_STACK_SIZE
+	int "Workqueue stack size"
+	default 2048
+	help
+	  Stack size for the WExx driver workqueue.
+
+config WIFI_WEXX_RX_THREAD_STACK_SIZE
+	int "RX thread stack size"
+	default 1024
+	help
+	  Stack size for the UART receive thread.
+
+config WIFI_WEXX_HTTP_RESPONSE_SIZE
+	int "HTTP response buffer size"
+	default 512
+	range 256 2048
+	depends on WIFI_WEXX_HTTP
+	help
+	  Scratch buffer for AT-command HTTP responses (ACK JSON / OTA hex chunks).
+
+config WIFI_WEXX_LINE_BUF_SIZE
+	int "UART line parse buffer size"
+	default 384
+	range 128 1024
+	help
+	  Per-line AT response parse buffer.
+
+config WIFI_WEXX_LOG_LEVEL
+	int "Log level for WExx driver"
+	default 3
+	range 0 4
+	help
+	  Log level for the WExx Wi-Fi driver.
+	  0 = Off, 1 = Error, 2 = Warning, 3 = Info, 4 = Debug
+
+menu "Protocol Modules"
+
+config WIFI_WEXX_HTTP
+	bool "HTTP support"
+	default y
+	help
+	  Enable HTTP GET/POST support for the WExx module.
+
+config WIFI_WEXX_NTP
+	bool "NTP time sync support"
+	default y
+	help
+	  Enable NTP time synchronization support.
+
+config WIFI_WEXX_MQTT
+	bool "MQTT support"
+	default y
+	help
+	  Enable MQTT client support (connect, publish, subscribe).
+
+config WIFI_WEXX_WEBSOCKET
+	bool "WebSocket support"
+	default y
+	help
+	  Enable WebSocket client support.
+
+config WIFI_WEXX_SOCKET
+	bool "Raw socket support"
+	default y
+	help
+	  Enable TCP/UDP/SSL socket client support.
+
+config WIFI_WEXX_AP
+	bool "AP mode support"
+	default n
+	help
+	  Enable Access Point mode and UDP server support.
+
+config WIFI_WEXX_OTA
+	bool "OTA firmware update support"
+	default n
+	help
+	  Enable Over-The-Air firmware update support for the WExx module.
+
+config WIFI_WEXX_FLASH
+	bool "User flash storage support"
+	default n
+	help
+	  Enable user flash read/write support.
+
+endmenu # Protocol Modules
+
+endif # WIFI_WEXX

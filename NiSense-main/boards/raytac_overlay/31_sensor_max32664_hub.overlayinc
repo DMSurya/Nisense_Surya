@@ -1,0 +1,75 @@
+/* Sensor group: MAX32664 hub + passthrough children */
+&i2c1 {
+	max32664_hub: max32664@55 {
+		status = "okay";
+		compatible = "maxim,max32664";
+		label = "MAX32664_HUB";
+		reg = <0x55>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		/* RSTN (P0.20) + MFIO (P1.06): wired on current HW.
+		 * App reset: RSTN low ≥10 ms, MFIO high ≥1 ms before RSTN rise,
+		 * +50 ms settle, then ~1800 ms ready (AN6924 Variant C).
+		 * After init MFIO is an input for data-ready IRQ; transport
+		 * uses AN6924 IRQ wake (5× addr 0x00) or Normal hold-low.
+		 * 200 ms poll remains fallback. */
+		reset-gpios = <&gpio0 20 GPIO_ACTIVE_LOW>;
+		interrupt-gpios = <&gpio1 6 GPIO_ACTIVE_LOW>;
+
+		/* vin-supply = <&max20360_bk2>; */
+		/* Operating mode is selected at compile time via Kconfig
+		 * CONFIG_MAX32664_MODE_HUB / RAW / PASSTHROUGH in prj.conf.
+		 * DTS remains responsible only for hardware description such as
+		 * accel-source, GPIO wiring, and child sensor properties. */
+		/*
+		 * accel-source = "external"
+		 *   - Hub firmware v30.2.2 GWEC only auto-drives a KX122 on its
+		 *     internal sensor bus. This board ships with a LIS2DS12, so
+		 *     the nRF reads LIS2DS12 via passthrough (Family 0x41/0x04)
+		 *     and feeds samples back via Family 0x14/0x04 at 25 Hz.
+		 *   - HUB: max32664c_init() uses 0x44/0x04/0x01/0x01 + feeder.
+		 *   - RAW: max32664_raw_mode_init() does the same when this property
+		 *     is external; enable CONFIG_MAX32664_EXTERNAL_ACCEL_FEEDER in prj.conf.
+		 *     PPG in RAW uses hub output FIFO (0x12), not AFE FIFO burst.
+		 *   - PASSTHROUGH: validate AFE FIFO via max32664_passthrough_read_ppg_ex
+		 *     (burst read); switch CONFIG_MAX32664_MODE_* and rebuild to test.
+		 *   - If the board is respun with a KX122, flip this to
+		 *     "internal" and the hub will drive the chip natively.
+		 */
+		accel-source = "external";
+		variant-hint = "gwec";
+		/* 200 ms poll interval: at 25 Hz AFE output (40 ms/sample) this
+		 * batches ~5 samples per I2C poll, amortising the ~5 ms per-read
+		 * overhead across multiple samples instead of hammering the bus
+		 * every 40 ms (~12% bus utilisation at 40 ms vs ~2.5% at 200 ms).
+		 * No standard governs this value; it is a firmware efficiency
+		 * trade-off. Range 40-1000 ms per DT binding. */
+		poll-interval-ms = <200>;
+
+		max86141_ppg: ppg@0 {
+			compatible = "maxim,max86141-ppg";
+			reg = <0>;
+			status = "okay";
+			led1-current = <0x7F>;
+			led2-current = <0x7D>;
+			led3-current = <0x7D>;
+			sample-rate = <3>;
+			adc1-range = <2>;
+			adc2-range = <2>;
+			sample-avg = <2>;
+			ppg-timestamp-enable;
+			fifo-a-full-threshold = <18>;
+			fifo-rollover-enable;
+			ppg-a-full-interrupt;
+		};
+
+		lis2ds12_accel: accel@4 {
+			compatible = "st,lis2ds12-accel";
+			reg = <4>;
+			status = "okay";
+			odr = <3>;
+			fs = <0>;
+		};
+	};
+};

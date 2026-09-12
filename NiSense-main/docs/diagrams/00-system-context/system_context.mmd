@@ -1,0 +1,57 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px'}}}%%
+%% =============================================================================
+%% SYSTEM CONTEXT DIAGRAM - nRF52840 Wearable Health Monitor
+%% =============================================================================
+%% Purpose: Shows the medical sensing platform in context with external actors
+%% Scope: System boundary, users, external systems, and data flows
+%% Assumptions:
+%%   - Device worn on wrist/finger for continuous health monitoring
+%%   - BLE used for mobile app pairing, Wi-Fi for cloud upload
+%%   - USB MSC for firmware update and data export
+%% =============================================================================
+
+graph TB
+    subgraph External Actors
+        User([👤 User/Patient])
+        Clinician([👨‍⚕️ Clinician])
+        MobileApp([📱 Mobile App<br/>BLE Companion])
+        CloudBackend([☁️ Cloud Backend<br/>MQTT/HTTPS])
+    end
+
+    subgraph "nRF52840 Wearable Health Monitor"
+        Device[🏥 Medical Sensing Device<br/>Raytac MDBT50Q-DB-40<br/>Zephyr RTOS + nRF Connect SDK]
+    end
+
+    subgraph Hardware Interfaces
+        USB([🔌 USB-C<br/>Charging + MSC])
+        Display([📺 LCD Display<br/>ST7789V 240x240])
+        Skin([🖐️ Skin Contact<br/>Sensors])
+    end
+
+    %% User interactions
+    User -->|Wears device| Skin
+    User -->|Views readings| Display
+    User -->|Charges/Updates| USB
+
+    %% Device to external systems
+    Device <-->|BLE GATT<br/>Config + Streaming| MobileApp
+    Device -->|Wi-Fi<br/>Data Upload| CloudBackend
+    Device <-->|USB MSC<br/>CSV Export/FW Update| USB
+
+    %% Mobile to cloud
+    MobileApp -->|View data| CloudBackend
+    Clinician -->|Monitor patients| CloudBackend
+
+    %% Sensor interfaces
+    Skin -->|PPG/Temp/SpO2| Device
+
+    %% Styling
+    classDef device fill:#4a90a4,stroke:#2c5f6e,stroke-width:3px,color:white
+    classDef external fill:#f5a623,stroke:#c77e00,stroke-width:2px
+    classDef hardware fill:#7ed321,stroke:#4a7c1a,stroke-width:2px
+    classDef actor fill:#9013fe,stroke:#6b0fbd,stroke-width:2px,color:white
+
+    class Device device
+    class MobileApp,CloudBackend external
+    class USB,Display,Skin hardware
+    class User,Clinician actor

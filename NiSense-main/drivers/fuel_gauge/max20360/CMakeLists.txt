@@ -1,0 +1,6 @@
+if(CONFIG_FUEL_GAUGE_MAX20360)
+  zephyr_library_named(drivers__fuel_gauge__max20360)
+  zephyr_library_sources(max20360.c)
+  zephyr_library_include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+  zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+endif()

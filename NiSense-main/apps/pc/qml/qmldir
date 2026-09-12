@@ -1,0 +1,8 @@
+singleton Theme 1.0 Theme.qml
+DashboardPage 1.0 DashboardPage.qml
+ScanPage 1.0 ScanPage.qml
+ChartsPage 1.0 ChartsPage.qml
+SettingsPage 1.0 SettingsPage.qml
+GattPage 1.0 GattPage.qml
+LogPage 1.0 LogPage.qml
+DfuPage 1.0 DfuPage.qml

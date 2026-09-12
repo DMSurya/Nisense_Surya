@@ -1,0 +1,4 @@
+/* SPI1 group: disabled due to peripheral conflict */
+&spi1 {
+	status = "disabled";
+};

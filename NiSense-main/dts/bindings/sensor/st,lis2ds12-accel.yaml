@@ -1,0 +1,59 @@
+# LIS2DS12 Accelerometer via MAX32664 Hub Passthrough
+#
+# This binding describes a LIS2DS12 accelerometer that is accessed through
+# the MAX32664 sensor hub. The parent device must be built with a
+# MAX32664 mode that exposes child sensors, selected via Kconfig.
+#
+# Example usage in device tree:
+#
+#   &i2c1 {
+#       max32664@55 {
+#           compatible = "maxim,max32664";
+#           ...
+#
+#           lis2ds12_accel: accel@4 {
+#               compatible = "st,lis2ds12-accel";
+#               reg = <4>;  /* Hub sensor index */
+#               odr = <3>;  /* 25Hz */
+#               fs = <0>;   /* ±2g */
+#           };
+#       };
+#   };
+
+description: LIS2DS12 Accelerometer via MAX32664 Hub Passthrough
+
+compatible: "st,lis2ds12-accel"
+
+include: sensor-device.yaml
+
+properties:
+  reg:
+    required: true
+    description: |
+      Hub sensor index for the LIS2DS12.
+      Should be 4 (HUB_SENSOR_IDX_LIS2DS12).
+
+  odr:
+    type: int
+    default: 3
+    description: |
+      Output data rate code (CTRL1 ODR[3:0]).
+      0 = Power down
+      1 = 1 Hz
+      2 = 12.5 Hz
+      3 = 25 Hz (default)
+      4 = 50 Hz
+      5 = 100 Hz
+      6 = 200 Hz
+      7 = 400 Hz
+      8 = 800 Hz
+
+  fs:
+    type: int
+    default: 0
+    description: |
+      Full-scale selection code (CTRL1 FS[1:0]).
+      0 = ±2g (default)
+      1 = ±16g
+      2 = ±4g
+      3 = ±8g

@@ -1,0 +1,152 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "⚡ Flash & Monitor (Interactive)",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/flash/flash_and_monitor.ps1"],
+			"group": {"kind": "build", "isDefault": false},
+			"presentation": {"reveal": "always", "focus": true, "panel": "dedicated", "clear": true},
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Build + Flash + Monitor",
+			"dependsOrder": "sequence",
+			"dependsOn": ["Build NiSense", "⚡ Flash & Monitor (Interactive)"],
+			"group": "build"
+		},
+		{
+			"label": "Flash + Monitor",
+			"dependsOrder": "sequence",
+			"dependsOn": ["Flash Program", "RTT Monitor"],
+			"group": "build"
+		},
+		{
+			"label": "Build NiSense",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/setup/build_project.ps1"],
+			"group": {"kind": "build", "isDefault": true},
+			"problemMatcher": ["$gcc"]
+		},
+		{
+			"label": "Build NiSense (Clean)",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/setup/build_project.ps1", "-Clean"],
+			"group": "build",
+			"problemMatcher": ["$gcc"]
+		},
+		{
+			"label": "Clean Build Directory",
+			"type": "shell",
+			"command": "Remove-Item -Recurse -Force build_sdk_v330 -ErrorAction SilentlyContinue; Write-Host 'Build directory cleaned'",
+			"options": {"shell": {"executable": "pwsh.exe", "args": ["-Command"]}},
+			"group": "build"
+		},
+		{
+			"label": "Flash Program",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/flash/flash_jlink.ps1"],
+			"group": "build"
+		},
+		{
+			"label": "Flash Program (nrfjprog)",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/flash/flash_nrfjprog.ps1"],
+			"group": "build"
+		},
+		{
+			"label": "RTT Monitor",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/rtt/rtt_monitor.ps1"],
+			"group": "build",
+			"presentation": {"reveal": "always", "focus": true, "panel": "dedicated", "clear": true},
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "RTT Monitor (with Log)",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/rtt/rtt_monitor.ps1", "-LogFile", "rtt_log.txt"],
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "RTT Monitor (Reset Device)",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/rtt/rtt_monitor.ps1", "-Reset"],
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Start GDB Server",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/debug/start_gdb_server.ps1"],
+			"group": "build",
+			"isBackground": true
+		},
+		{
+			"label": "Kill Debug Processes",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/debug/kill_debug_processes.ps1"],
+			"group": "build"
+		},
+		{
+			"label": "Analyze Fault",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/debug/fault_analyze.ps1"],
+			"group": "build",
+			"presentation": {"reveal": "always", "focus": true, "panel": "new"}
+		},
+		{
+			"label": "Launch Ozone",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/setup/launch_ozone.ps1"],
+			"group": "build"
+		},
+		{
+			"label": "Setup nRF SDK",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/setup/setup_nrf_sdk.ps1"],
+			"group": "build",
+			"presentation": {"reveal": "always", "focus": true, "panel": "new"}
+		},
+		{
+			"label": "Setup New Project",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/setup/setup_new_project.ps1"],
+			"group": "build"
+		},
+		{
+			"label": "Convert Resource store",
+			"type": "shell",
+			"command": "python",
+			"args": ["${workspaceFolder}/scripts/tools/convert_logos_to_resource.py", "--src-dir", "${workspaceFolder}/src/core"],
+			"group": "build",
+			"presentation": {"reveal": "always", "focus": true, "panel": "shared"},
+			"problemMatcher": []
+		},
+		{
+			"label": "Build + Convert Resource store",
+			"dependsOrder": "sequence",
+			"dependsOn": ["Build NiSense", "Convert Resource store"],
+			"group": "build"
+		}
+	]
+}

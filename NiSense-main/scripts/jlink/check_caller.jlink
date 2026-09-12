@@ -1,0 +1,14 @@
+connect
+halt
+// Check what's at caller address 0xF5B (LR from stack)
+mem32 0x0F50 8
+
+// Check code at 0x624B (R12 value)
+mem32 0x6240 8
+
+// Let's also look at app's z_prep_c area where VTOR should be set
+// z_prep_c is at 0x29774 according to earlier analysis
+mem32 0x29770 8
+
+exit
+

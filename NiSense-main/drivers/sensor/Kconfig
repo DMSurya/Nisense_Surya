@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+
+rsource "glucose/Kconfig"
+rsource "max32664/Kconfig"
+rsource "max302xx/Kconfig"
+rsource "vcnl3040/Kconfig"
+rsource "max3010x/Kconfig"
+
+# ppg_algo moved to subsys/ppg_algo (Zephyr subsystem)

@@ -1,0 +1,7 @@
+rsource "adc/Kconfig"
+rsource "counter/Kconfig"
+rsource "regulator/Kconfig"
+rsource "fuel_gauge/Kconfig"
+rsource "charger/Kconfig"
+rsource "sensor/Kconfig"
+rsource "wifi/Kconfig"

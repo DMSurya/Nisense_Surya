@@ -1,0 +1,31 @@
+%%{init: {'theme': 'base'}}%%
+%% Data export: NOR record_store → BLE …def4 or USB CDC
+%% Updated: 2026-07-21
+
+sequenceDiagram
+    participant Sensor as Sensors
+    participant Logger as Loggers
+    participant Store as record_store
+    participant Ble as ble_record_sync
+    participant Phone as Mobile_app
+    participant Cdc as USB_CDC_shell
+    participant Host as Host_PC
+
+    Note over Sensor,Store: Path1_local_persist
+    Sensor->>Logger: measurement_result
+    Logger->>Store: append_summary_plus_raw
+    Store-->>Logger: record_id
+
+    Note over Ble,Phone: Path2_BLE_def4_pull
+    Phone->>Ble: f401_START_SUMMARY_or_FULL
+    Ble->>Store: read_next_pending
+    Store-->>Ble: framed_payload
+    Ble->>Phone: f402_notify_frames
+    Phone->>Ble: f401_ACK_up_to_id
+    Ble->>Store: mark_acked
+
+    Note over Cdc,Host: Path3_CDC_shell
+    Host->>Cdc: nisense_rec_stats_or_export
+    Cdc->>Store: read_id_or_export
+    Store-->>Cdc: text_or_hex
+    Cdc-->>Host: CDC_response

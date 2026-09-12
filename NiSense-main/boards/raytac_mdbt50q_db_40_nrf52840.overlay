@@ -1,0 +1,109 @@
+/* =============================================================================
+ * Board Overlay - Raytac MDBT50Q-DB-40 (nRF52840)
+ * =============================================================================
+ * Split into grouped include fragments under boards/raytac_overlay/.
+ * Keep aliases in this main overlay only.
+ * ============================================================================= */
+
+#include <dt-bindings/i2c/i2c.h>
+#include <dt-bindings/adc/nrf-adc.h>
+#include <dt-bindings/gpio/gpio.h>
+
+#include "raytac_overlay/00_cleanup.overlayinc"
+#include "raytac_overlay/10_root_common.overlayinc"
+#include "raytac_overlay/11_keys.overlayinc"
+#include "raytac_overlay/20_i2c0.overlayinc"
+#include "raytac_overlay/21_sensor_max20360.overlayinc"
+#include "raytac_overlay/22_sensor_max20360_fuel_gauge.overlayinc"
+#include "raytac_overlay/23_sensor_mcp7940n.overlayinc"
+#include "raytac_overlay/24_sensor_ft6336.overlayinc"
+#include "raytac_overlay/25_sensor_max30205.overlayinc"
+#include "raytac_overlay/26_sensor_max30208.overlayinc"
+#include "raytac_overlay/27_sensor_max30102.overlayinc"
+#include "raytac_overlay/28_sensor_vcnl3040.overlayinc"
+#include "raytac_overlay/29_sensor_max20360_adc.overlayinc"
+#include "raytac_overlay/30_i2c1.overlayinc"
+#include "raytac_overlay/31_sensor_max32664_hub.overlayinc"
+#include "raytac_overlay/40_adc_glucose.overlayinc"
+#include "raytac_overlay/41_spi2_display.overlayinc"
+#include "raytac_overlay/50_memory.overlayinc"
+#include "raytac_overlay/51_qspi.overlayinc"
+#include "raytac_overlay/60_peripherals.overlayinc"
+#include "raytac_overlay/61_spi1_disable.overlayinc"
+#include "raytac_overlay/62_uart_wifi.overlayinc"
+#include "raytac_overlay/63_usb.overlayinc"
+#include "raytac_overlay/64_usb_cdc.overlayinc"
+#include "raytac_overlay/65_shell_uart.overlayinc"
+
+/ {
+	/*
+	 * Runtime product SKU (Watch vs Pulse) — not primary→secondary fallback.
+	 *
+	 * product_hw_detect() chooses exclusively:
+	 *   Watch: MAX32664C + MAX86141 (ncs,ppg-primary / hub in HUB mode)
+	 *   Pulse: MAX3010x direct (ncs,ppg-secondary) and/or MAX32664D hub
+	 *
+	 * Both endpoints stay in DT so one firmware image can detect either
+	 * board. HUB vs RAW is compile-time (CONFIG_MAX32664_MODE_*).
+	 * Both wearable + pulse glucose models stay in NOR for the same detect.
+	 */
+	chosen {
+		/* Watch PPG endpoint (MAX86141 child; HUB mode binds hub in C) */
+		ncs,ppg-primary   = &max86141_ppg;
+		/* Pulse PPG endpoint (MAX3010x on I2C0, direct to nRF) */
+		ncs,ppg-secondary = &max30102;
+	};
+
+	/* Device aliases for easy access (kept in main overlay) */
+	aliases {
+		/* Remove conflicting aliases from base DTS */
+		/delete-property/ led0;
+		/delete-property/ led1;
+		/delete-property/ led2;
+		/delete-property/ pwm-led0;
+		/delete-property/ sw0;
+		/delete-property/ sw1;
+		/delete-property/ sw2;
+		/delete-property/ sw3;
+		/delete-property/ bootloader-led0;
+		/delete-property/ mcuboot-button0;
+		/delete-property/ mcuboot-led0;
+
+		/* PMIC and regulators */
+		pmic0 = &max20360;
+		bk1 = &max20360_bk1;
+		bk2 = &max20360_bk2;
+		bk3 = &max20360_bk3;
+		bbout = &max20360_bbout;
+		l2out = &max20360_l2out;
+		fuelgauge = &max20360_fuel_gauge;
+		charger0 = &max20360_charger;
+		pmicadc = &max20360_adc;
+
+		/* Sensors */
+		glucose0 = &glucose_sensor;
+		buzzer0 = &buzzer_pwm;
+		sw1 = &sw1;
+		sw2 = &sw2;
+		/* MAX32664 Hub */
+		max32664-hub = &max32664_hub;
+		accel-sensor = &lis2ds12_accel;   /* Motion rejection on hub path */
+		/* Temperature sensors: Wearable (continuous) and Pulse (spot check) */
+		temp-wearable = &max30208;  /* Wearable: Continuous monitoring (16-bit, FIFO, interrupt) */
+		temp-pulse = &max30205;     /* Pulse: Finger spot check (13-bit, polling, OS alarm) */
+		vcnl3040 = &vcnl3040;
+
+		/* Other devices */
+		rtc0 = &mcp7940n;
+		display0 = &st7789v_display;
+
+		/* Keep watchdog alias from base DTS */
+		watchdog0 = &wdt0;
+
+		/* Alias for new USBD stack */
+		zephyr-udc0 = &usbd;
+
+		/* Wi-Fi module alias */
+		wifi0 = &wexx_wifi;
+	};
+};

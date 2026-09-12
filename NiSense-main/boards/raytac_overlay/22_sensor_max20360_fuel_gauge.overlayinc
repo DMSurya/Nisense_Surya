@@ -1,0 +1,13 @@
+/* Sensor group: MAX20360 fuel gauge */
+&i2c0 {
+	max20360_fuel_gauge: max20360_fuel_gauge@36 {
+		compatible = "maxim,max20360-fuel-gauge";
+		reg = <0x36>;
+		/* KM20 Megnus class Li-ion: 380 mAh, 3.7 V rated */
+		design-capacity-mah = <380>;
+		design-voltage-millivolt = <3700>;
+		/* RSENSE = 0.01 Ω → current LSB 156.25 µA */
+		rsense-milliohms = <10>;
+		status = "okay";
+	};
+};

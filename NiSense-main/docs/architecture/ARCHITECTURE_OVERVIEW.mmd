@@ -1,0 +1,57 @@
+%% NiSense application architecture (2026-07)
+%% Render in Mermaid-compatible viewer or Cursor markdown preview.
+
+flowchart TB
+  subgraph App["Application (src/)"]
+    main["main.c<br/>init + main loop"]
+    ui["ui.c<br/>single-screen carousel"]
+    shell["ui_shell.c<br/>status strip"]
+    agent["ui_agent.c<br/>results slideshow"]
+    hold["ui_hold_overlay.c<br/>button hold UI"]
+    buttons["ui_buttons.c<br/>SW1 + PFN1 policy"]
+    health["health_sched.c<br/>measurement agent"]
+    pmgr["power_mgr.c<br/>battery + display policy"]
+    pbatt["power_batt.c<br/>cached snapshots"]
+    blow["battery_low.c<br/>PFN2 IRQ"]
+    ble["ble.c / ble_gatt.c"]
+    cfg["config_manager.c"]
+  end
+
+  subgraph HW["Hardware inputs"]
+    sw1["SW1 P0.29<br/>nav / measure hold"]
+    pfn1["PFN1 P1.04<br/>power button"]
+    touch["FT6336 touch"]
+    pfn2["PFN2 P1.15<br/>batt-low wake"]
+  end
+
+  subgraph PMIC["MAX20360 @ I2C"]
+    fg["Fuel gauge @ 0x36"]
+    chg["Charger"]
+    rails["BK1/BK2/BBOUT"]
+  end
+
+  main --> ui
+  main --> pmgr
+  main --> health
+  main --> ble
+
+  sw1 --> buttons
+  pfn1 --> buttons
+  touch --> ui
+  buttons --> hold
+  buttons --> ui
+  buttons --> health
+  buttons --> pmgr
+
+  pmgr --> pbatt
+  pmgr --> blow
+  pbatt --> fg
+  blow --> pfn2
+  pmgr --> ui
+  health --> agent
+
+  ble --> cfg
+  cfg --> pmgr
+  cfg --> buttons
+
+  ui --> shell

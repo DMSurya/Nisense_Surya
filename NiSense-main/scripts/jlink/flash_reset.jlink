@@ -1,0 +1,6 @@
+r
+loadfile "E:\AARMS\HCM\NiSense\build_sdk_v300\merged.hex"
+r
+g
+exit
+

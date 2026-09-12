@@ -1,0 +1,85 @@
+%%{init: {'theme': 'base'}}%%
+%% =============================================================================
+%% TEMPERATURE DRIVER COMPONENT DIAGRAM
+%% =============================================================================
+%% Purpose: Shows the temperature sensor driver architecture
+%% Scope: MAX30205 (pulse/spot) and MAX30208 (wearable/continuous) drivers
+%% Assumptions:
+%%   - Two temperature sensors for different use cases
+%%   - Standard Zephyr sensor API
+%%   - Out-of-tree drivers under drivers/sensor/max302xx/
+%% =============================================================================
+
+graph TB
+    subgraph "Application Layer (src/)"
+        TempUI[temp_ui.c<br/>Temperature Display<br/>LVGL Widgets]
+    end
+
+    subgraph "Zephyr Sensor API"
+        SensorAPI[sensor_sample_fetch<br/>sensor_channel_get<br/>SENSOR_CHAN_AMBIENT_TEMP]
+    end
+
+    subgraph "Temperature Driver (drivers/sensor/max302xx/)"
+        subgraph "MAX30205 Driver (Pulse/Spot Check)"
+            MAX30205Drv[max30205.c<br/>13-bit Resolution<br/>Polling Mode]
+            MAX30205Cfg[Conversion Mode<br/>One-Shot/Continuous<br/>OS Alarm Threshold]
+        end
+
+        subgraph "MAX30208 Driver (Wearable/Continuous)"
+            MAX30208Drv[max30208.c<br/>16-bit Resolution<br/>FIFO + Interrupt]
+            MAX30208FIFO[FIFO Management<br/>32 Sample Buffer<br/>Watermark IRQ]
+        end
+
+        subgraph "Driver Common"
+            Common[max302xx_common.c<br/>I2C Helpers<br/>Temperature Conversion]
+            Kconfig[Kconfig<br/>Sensor Selection<br/>Sample Rate]
+        end
+    end
+
+    subgraph "Hardware"
+        I2C0[I2C0 Bus<br/>400kHz]
+        MAX30205HW[MAX30205<br/>0x48<br/>Finger Contact]
+        MAX30208HW[MAX30208<br/>0x53<br/>Skin Contact]
+    end
+
+    subgraph "Device Tree"
+        DT_Wearable[temp-wearable alias<br/>Continuous Mode]
+        DT_Pulse[temp-pulse alias<br/>Spot Check Mode]
+    end
+
+    %% Application flow
+    TempUI --> SensorAPI
+
+    %% API to drivers
+    SensorAPI --> MAX30205Drv
+    SensorAPI --> MAX30208Drv
+
+    %% Driver internals
+    MAX30205Drv --> MAX30205Cfg
+    MAX30205Drv --> Common
+    MAX30208Drv --> MAX30208FIFO
+    MAX30208Drv --> Common
+    Kconfig --> MAX30205Drv
+    Kconfig --> MAX30208Drv
+
+    %% Hardware access
+    Common --> I2C0
+    I2C0 --> MAX30205HW
+    I2C0 --> MAX30208HW
+
+    %% Device tree
+    DT_Wearable --> MAX30208Drv
+    DT_Pulse --> MAX30205Drv
+
+    %% Styling
+    classDef app fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
+    classDef api fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef driver fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef hw fill:#cfd8dc,stroke:#455a64,stroke-width:2px
+    classDef dt fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+
+    class TempUI app
+    class SensorAPI api
+    class MAX30205Drv,MAX30205Cfg,MAX30208Drv,MAX30208FIFO,Common,Kconfig driver
+    class I2C0,MAX30205HW,MAX30208HW hw
+    class DT_Wearable,DT_Pulse dt

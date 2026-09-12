@@ -1,0 +1,21 @@
+# Copyright (c) 2026 NiSense Contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# GPIO pin definition for app-owned buttons (hw_button.c).
+# No Zephyr driver binds to this compatible — avoids conflict with INPUT/gpio-keys.
+
+description: HCM board GPIO button pin (application-owned, no kernel driver)
+
+compatible: "hcm,gpio-button"
+
+include: base.yaml
+
+properties:
+  label:
+    type: string
+    description: Human-readable button name
+
+  gpios:
+    type: phandle-array
+    required: true
+    description: Active-low switch input with pull-up (GPIO_PULL_UP | GPIO_ACTIVE_LOW)

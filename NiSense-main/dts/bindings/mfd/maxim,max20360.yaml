@@ -1,0 +1,50 @@
+# Copyright (c) 2025
+# SPDX-License-Identifier: Apache-2.0
+
+description: Maxim MAX20360 PMIC
+
+compatible: "maxim,max20360"
+
+include: i2c-device.yaml
+
+properties:
+  reg:
+    required: true
+
+  interrupt-gpios:
+    type: phandle-array
+    description: |
+      GPIO pin for PMIC interrupt (active low)
+
+  mpc-gpios:
+    type: phandle-array
+    description: |
+      GPIO pins for mode control (MPC0, MPC1, MPC2)
+
+  ivmon-gpios:
+    type: phandle-array
+    description: |
+      GPIO pin for IVMON (current monitoring) analog output. This pin outputs
+      an analog voltage proportional to the monitored current. Typically connected
+      to an ADC input for current measurement.
+
+  maxim,variant:
+    type: string
+    required: false
+    description: |
+      Override variant detection. If not specified, variant is auto-detected
+      from default register values. Valid values:
+      - "ev-kit"
+      - "ev-kit-harvester"
+      - "max20360a"
+      - "max20360b"
+      - "max20360c"
+      - "max20360f"
+      - "max20360g"
+      - "max20360i"
+      - "max20360j"
+      - "max20360k"
+      - "max20360l"
+      - "max20360m"
+      - "max20360o"
+      - "max20360p"

@@ -1,0 +1,5 @@
+connect
+halt
+mem32 0x000F9EE0 24
+mem32 0x000FA000 8
+exit

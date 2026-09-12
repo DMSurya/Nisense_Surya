@@ -1,0 +1,37 @@
+/* Internal Flash (flash0) */
+&flash0 {
+	/delete-node/ partitions;
+	label = "flash_primary";
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		/* MCUBoot bootloader partition */
+		boot_partition: partition@0 {
+			label = "mcuboot";
+			reg = <0x00000 0xa000>;  /* 40 KB */
+			read-only;
+		};
+
+		/* Primary application slot (Slot0) — 968 KB
+		 * Includes 0x200-byte MCUboot image header pad at the start.
+		 * App binary: 0xa200-0xfc000 (0xf1e00 usable content bytes). */
+		slot0_partition: partition@a000 {
+			label = "image-0";
+			reg = <0xa000 0xf2000>;  /* 968 KB — must match slot1_partition */
+		};
+
+		/* Settings NVS (16 KB) — BLE bond records + Zephyr settings backend */
+		storage_partition: partition@fc000 {
+			label = "storage";
+			reg = <0xfc000 0x4000>;
+		};
+	};
+};
+
+/* SRAM Configuration */
+&sram0 {
+	reg = <0x20000000 0x40000>;  /* 256 KB SRAM */
+};
+

@@ -1,0 +1,643 @@
+/* =============================================================================
+ * Board Overlay - MAX20360 PMIC + MAX32664 Sensor Hubs
+ * =============================================================================
+ * Target Board: Raytac MDBT50Q-DB-40 (nRF52840)
+ * 
+ * Hardware Configuration:
+ * 
+ * I2C Buses:
+ *   - I2C0: SDA = P0.13, SCL = P0.14
+ *     Devices: MAX20360 PMIC, MCP7940N RTC, FT6336 Touch, MAX30208 Temp
+ *   - I2C1: SDA = P0.16, SCL = P0.15
+ *     Devices: MAX32664GWED @ 0x55 (finger PPG hub, standard I2C address)
+ *     Note: RSTN=P0.20, MFIO=P1.6
+ * 
+ * SPI Buses:
+ *   - SPI2: Display (ST7789V)
+ *     Pins: SCK=P1.8, MOSI=P0.26, CS=P1.9, DC=P1.10, RST=P1.12
+ *     Note: Moved from SPI1 to avoid I2C1/SPI1 hardware conflict
+ * 
+ * GPIO Pins:
+ *   - P0.31: MAX20360 INT (active low)
+ *   - P0.25: MAX20360 RST (status output, not controlled)
+ *   - P0.28, P0.30, P0.02: MAX20360 MPC0/1/2 (mode control)
+ *   - P1.13: MAX20360 IVMON (current monitoring)
+ *   - P1.3: MCP7940N INT (active low)
+ *   - P1.5: FT6336 INT (active low)
+ *   - P1.1: FT6336 RST (active low)
+ *   - P0.20: MAX32664GWED RSTN (active low, reset pin)
+ *   - P1.6: MAX32664GWED MFIO (active low, interrupt/data-ready)
+ * 
+ * Peripheral Conflicts Resolved:
+ *   - SPI1 disabled (conflicts with I2C1 on same hardware instance)
+ *   - LED0/LED1 disabled (conflict with I2C0 pins)
+ *   - PWM0 disabled (conflict with I2C0 pins)
+ * ============================================================================= */
+
+#include <dt-bindings/i2c/i2c.h>
+#include <dt-bindings/adc/nrf-adc.h>
+#include <dt-bindings/gpio/gpio.h>
+
+/* =============================================================================
+ * Device Tree Root - Aliases and Chosen
+ * ============================================================================= */
+/ {
+	/* Device aliases for easy access */
+	aliases {
+		/* PMIC and regulators */
+		pmic0 = &max20360;
+		bk1 = &max20360_bk1;
+		bk2 = &max20360_bk2;
+		bk3 = &max20360_bk3;
+		bbout = &max20360_bbout;
+		fuelgauge = &max20360_fuel_gauge;
+		charger0 = &max20360_charger;
+		
+		/* Sensors */
+		glucose0 = &glucose_sensor;
+		/* Both aliases point to the same PPG node - only one compatible is active at a time */
+		hub-wrist = &max32664_ppg;
+		hub-finger = &max32664_ppg;
+		
+		/* Other devices */
+		rtc0 = &mcp7940n;
+		display0 = &st7789v_display;
+	};
+
+	/* Zephyr chosen devices */
+	chosen {
+		zephyr,display = &st7789v_display;
+		zephyr,touch = &ft6336_touch;
+		zephyr,code-partition = &slot0_partition;
+		sram = &sram0;
+	};
+	
+	/* Fixed regulators */
+	regulators: regulators {
+		lcd_vled: regulator-lcd-vled {
+			compatible = "regulator-fixed";
+			regulator-name = "vled-lcd";
+			enable-gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
+			regulator-boot-on;
+			startup-delay-us = <5000>;
+		};
+	};
+
+	/* LVGL pointer input from touchscreen */
+	lvgl_pointer: lvgl_pointer_input {
+		compatible = "zephyr,lvgl-pointer-input";
+		input = <&ft6336_touch>;
+	};
+	
+	/* USB Mass Storage Flash Disk */
+	/* Partition is defined in pm_static.yml, this node enables the flash disk driver */
+	msc_disk0 {
+		compatible = "zephyr,flash-disk";
+		partition = <&littlefs_partition>;
+		disk-name = "SENSORLOG";
+		cache-size = <4096>;
+	};
+};
+
+/* USB device configuration */
+&zephyr_udc0 {
+	status = "okay";
+};
+
+&usbd {
+	status = "okay";
+};
+
+/* =============================================================================
+ * I2C0 - Main Board Bus (P0.13/P0.14)
+ * =============================================================================
+ * 100 kHz I2C bus for PMIC, RTC, touch, and temperature sensor
+ * ============================================================================= */
+&i2c0 {
+	status = "okay";
+	pinctrl-0 = <&i2c0_custom>;
+	pinctrl-1 = <&i2c0_sleep_custom>;
+	pinctrl-names = "default", "sleep";
+	clock-frequency = <I2C_BITRATE_STANDARD>;  /* 100 kHz */
+	/delete-property/ zephyr,pm-device-runtime-auto;
+
+	/* MAX20360 PMIC - Power Management IC */
+	max20360: max20360@28 {
+		compatible = "maxim,max20360";
+		reg = <0x28>;
+		status = "okay";
+		
+		/* Interrupt GPIO - P0.31 (active low) */
+		interrupt-gpios = <&gpio0 31 GPIO_ACTIVE_LOW>;
+		
+		/* Variant: MAX20360F - explicitly set to avoid auto-detection */
+		maxim,variant = "max20360f";
+		
+		/* IVMON (Current Monitoring) GPIO - P1.13 */
+		/* IVMON outputs analog voltage proportional to monitored current (default: Buck1) */
+		ivmon-gpios = <&gpio1 13 GPIO_ACTIVE_HIGH>;
+
+		/* Regulator outputs container */
+		/* Note: Only BK1, BK2, BK3, and BBOUT are used. LSW1 and LSW2 are disabled (not in this container). */
+		regulators {
+			compatible = "maxim,max20360-regulator";
+			
+			/* BK1 Regulator - 1.2V (VDD_CORE) */
+			/* MAX20360F: Range 0.55V–3.7V (10mV steps), configured 1.2V max is within device capability */
+			max20360_bk1: bk1 {
+				maxim,source = "bk1";
+				regulator-name = "vdd_core";
+				regulator-min-microvolt = <550000>;
+				regulator-max-microvolt = <1200000>;  /* Extended to 1.2V for MAX20360F */
+				regulator-init-microvolt = <1200000>;  /* Initial voltage: 1.2V */
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			/* BK2 Regulator - 1.8V (VDD_IO) */
+			max20360_bk2: bk2 {
+				maxim,source = "bk2";
+				regulator-name = "vdd_io";
+				regulator-min-microvolt = <550000>;
+				regulator-max-microvolt = <2125000>;
+				regulator-init-microvolt = <1800000>;  /* Initial voltage: 1.8V */
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			/* BK3 Regulator - Default voltage (variant-specific default) */
+			/* MAX20360F: Uses default voltage from OTP, no explicit configuration needed */
+			max20360_bk3: bk3 {
+				maxim,source = "bk3";
+				regulator-name = "vdd_bk3";
+				regulator-min-microvolt = <550000>;
+				regulator-max-microvolt = <3700000>;
+				/* No regulator-init-microvolt - uses variant default */
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			/* BBOUT Buck-Boost Regulator - 5.0V */
+			max20360_bbout: bbout {
+				maxim,source = "bbout";
+				regulator-name = "vcc_5v";
+				regulator-min-microvolt = <2500000>;
+				regulator-max-microvolt = <5000000>;
+				regulator-init-microvolt = <5000000>;  /* Initial voltage: 5.0V */
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			/* LSW1 and LSW2 are NOT configured here - they remain disabled */
+		};
+
+		/* Battery Charger Configuration */
+		max20360_charger: charger {
+			compatible = "maxim,max20360-charger";
+			status = "okay";
+			charge-voltage-microvolt = <4200000>;     /* 4.2V default */
+			charge-current-microamp = <500000>;       /* 500mA default */
+			input-current-limit-microamp = <500000>;  /* 500mA default */
+		};
+	};
+
+	/* MAX20360 Fuel Gauge - Standalone I2C device at 0x36 */
+	max20360_fuel_gauge: max20360_fuel_gauge@36 {
+		compatible = "maxim,max20360-fuel-gauge";
+		reg = <0x36>;  /* I2C address 0x36 (7-bit) */
+		status = "okay";
+	};
+
+	/* MCP7940N Real-Time Clock */
+	mcp7940n: mcp7940n@6f {
+		compatible = "microchip,mcp7940n";
+		reg = <0x6f>;
+		status = "okay";
+		int-gpios = <&gpio1 3 GPIO_ACTIVE_LOW>;
+	};
+	
+	/* FT6336 Touch Controller */
+	ft6336_touch: ft6336@38 {
+		compatible = "focaltech,ft5336";
+		reg = <0x38>;
+		screen-width = <240>;
+		screen-height = <240>;
+		int-gpios = <&gpio1 5 GPIO_ACTIVE_LOW>;
+		reset-gpios = <&gpio1 1 GPIO_ACTIVE_LOW>;
+		swapped-x-y;
+		status = "okay";
+	};
+	
+	/* MAX30208 Temperature Sensor */
+	max30208: max30208@50 {
+		compatible = "maxim,max30208";
+		reg = <0x50>;
+		status = "okay";
+		label = "max30208";
+	};
+};
+
+/* =============================================================================
+ * I2C1 - Sensor Hub Bus (P0.16/P0.15)
+ * =============================================================================
+ * Dedicated I2C bus for MAX32664 sensor hubs
+ * Note: Display moved to SPI2 to avoid I2C1/SPI1 hardware conflict
+ * ============================================================================= */
+&i2c1 {
+	status = "okay";
+	pinctrl-0 = <&i2c1_sensor_hub>;
+	pinctrl-1 = <&i2c1_sensor_hub_sleep>;
+	pinctrl-names = "default", "sleep";
+	clock-frequency = <I2C_BITRATE_STANDARD>;  /* 100 kHz */
+	/delete-property/ zephyr,pm-device-runtime-auto;
+    
+	/* MAX32664GWED+ @ 0x55 (Finger PPG Hub) */
+	/* GWED variant: Finger PPG + Proximity/ALS Hub */
+	/* Manages: MAX30101 (PPG) + VCNL3040 (Prox/ALS) via internal I2C */
+	/* Note: 0x55 is the standard I2C address (7-bit) per MAX32664 datasheet */
+	max32664_ppg: max32664@55 {
+		compatible = "maxim,max32664-gwed";
+		
+		label = "MAX32664_PPG";
+		reg = <0x55>;
+		status = "okay";
+		
+		/* RSTN reset pin (active-low) - P0.20 */
+		reset-gpios = <&gpio0 20 GPIO_ACTIVE_LOW>;
+		
+		/* MFIO interrupt pin (data-ready) - P1.06 (wired on current HW) */
+		interrupt-gpios = <&gpio1 6 GPIO_ACTIVE_LOW>;
+		
+		/* 200 ms poll: sole wake without MFIO; fallback when MFIO IRQ is quiet */
+		poll-interval-ms = <200>;
+	};
+};
+
+/* =============================================================================
+ * ADC - Analog-to-Digital Converter
+ * =============================================================================
+ * Configured for INA122UA instrumentation amplifier (glucose sensor)
+ * ============================================================================= */
+&adc {
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	/* INA122UA connected to P0.03 (AIN1) */
+	channel@1 {
+		reg = <1>;
+		zephyr,gain = "ADC_GAIN_1_6";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,input-positive = <NRF_SAADC_AIN1>; /* P0.03 */
+		zephyr,resolution = <12>;
+	};
+};
+
+/* =============================================================================
+ * Glucose Sensor - Custom Device Node
+ * ============================================================================= */
+&{/} {
+	glucose_sensor: glucose-sensor {
+		compatible = "glucose-sensor";
+		status = "okay";
+		
+		/* IR LED control GPIO - P0.24, active high */
+		ir-led-gpios = <&gpio0 24 GPIO_ACTIVE_HIGH>;
+		
+		/* ADC channel for glucose signal (AIN1 = P0.03) */
+		io-channels = <&adc 1>;
+		
+		/* Measurement configuration */
+		num-samples = <80>;          /* 80 ADC samples per measurement */
+		led-delay-ms = <2000>;       /* 2 second LED stabilization delay */
+		sample-rate-hz = <2>;        /* 2 Hz = 500 ms between samples */
+		
+		/* Calibration parameters (set during calibration procedure) */
+		calibration-offset-mv = <0>;  /* Photodiode dark current offset (mV) */
+		calibration-gain = <1000>;    /* Gain correction factor (1000 = 1.0, stored as integer) */
+	};
+};
+
+/* =============================================================================
+ * SPI2 - Display Bus (ST7789V)
+ * =============================================================================
+ * Display moved from SPI1 to SPI2 to avoid hardware conflict with I2C1
+ * Pins: SCK=P1.8, MOSI=P0.26, CS=P1.9, DC=P1.10, RST=P1.12
+ * ============================================================================= */
+&spi2 {
+	compatible = "nordic,nrf-spim";
+	status = "okay";
+	pinctrl-0 = <&spi2_display>;
+	pinctrl-1 = <&spi2_display_sleep>;
+	pinctrl-names = "default", "sleep";
+	cs-gpios = <&gpio1 9 GPIO_ACTIVE_LOW>;
+	
+	mipi_dbi: st7789v@0 {
+		compatible = "zephyr,mipi-dbi-spi";
+		reg = <0>;
+		spi-dev = <&spi2>;
+		dc-gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio1 12 GPIO_ACTIVE_LOW>;
+		write-only;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		
+		st7789v_display: st7789v@0 {
+			compatible = "sitronix,st7789v";
+			reg = <0>;
+			mipi-mode = "MIPI_DBI_MODE_SPI_4WIRE";
+			mipi-max-frequency = <20000000>;  /* 20 MHz max SPI frequency */
+			width = <240>;
+			height = <240>;
+			x-offset = <0>;
+			y-offset = <0>;
+
+			/* Display timing parameters (from datasheet) */
+			vcom = <0x19>;
+			gctrl = <0x35>;
+			vrhs = <0x10>;
+			vdvs = <0x20>;
+			mdac = <0x00>;
+			gamma = <0x01>;
+			colmod = <0x05>;
+			lcm = <0x2c>;
+			porch-param = [0c 0c 00 33 33];
+			cmd2en-param = [5a 69 02 01];
+			pwctrl1-param = [a4 a1];
+			pvgam-param = [d0 04 0d 11 13 2b 3f 54 4c 18 0d 0b 1f 23];
+			nvgam-param = [d0 04 0c 11 13 2c 3f 44 51 2f 1f 1f 20 23];
+			ram-param = [00 f0];
+			rgb-param = [cd 08 14];
+		};
+	};
+};
+
+/* =============================================================================
+ * Internal Flash (flash0) - CODE EXECUTION & GROWTH
+ * =============================================================================
+ * Partition Layout:
+ *   0x00000-0x08000 (32 KB):  MCUBoot bootloader (locked)
+ *   0x08000-0xE8000 (896 KB): Slot0 (primary app, expanded using reserved)
+ *   0xE8000-0x100000 (96 KB): Runtime memory (BSS, heap, stacks)
+ * 
+ * Note: Delete existing partitions first to avoid conflicts with base board
+ * ============================================================================= */
+&flash0 {
+	/delete-node/ partitions;
+	
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		/* MCUBoot bootloader partition */
+		boot_partition: partition@0 {
+			label = "mcuboot";
+			reg = <0x00000 0x8000>;  /* 32 KB */
+			read-only;
+		};
+
+		/* Primary application slot (Slot0) - expanded to 896 KB */
+		slot0_partition: partition@8000 {
+			label = "image-0";
+			reg = <0x08000 0xE0000>;  /* 896 KB (384 KB + 512 KB reserved) */
+		};
+
+		/* Runtime memory partition */
+		runtime_partition: partition@E8000 {
+			label = "runtime";
+			reg = <0xE8000 0x18000>;  /* 96 KB */
+		};
+	};
+};
+
+/* =============================================================================
+ * SRAM Configuration
+ * ============================================================================= */
+&sram0 {
+	reg = <0x20000000 0x40000>;  /* 256 KB SRAM */
+};
+
+/* =============================================================================
+ * QSPI - External Flash (MX25R6435F 64Mb / 8 MB)
+ * =============================================================================
+ * External Flash Partition Layout:
+ *   0x00000-0x80000 (512 KB):  Slot1 (OTA staging)
+ *   0x80000-0x81000 (4 KB):     MCUBoot scratch (atomic swap)
+ *   0x81000-0x181000 (1 MB):    Slot2 (fallback app)
+ *   0x181000-0x1A1000 (128 KB): NVS storage (config)
+ *   0x1A1000-0x1B1000 (64 KB):  Calibration (prod-locked)
+ *   0x1B1000-0x1B5000 (16 KB):  Reserved
+ *   0x1B5000-0x3B5000 (2 MB):   LittleFS (sensor logs)
+ *   0x3B5000-0x800000 (4.3 MB): User data archive
+ * 
+ * QSPI Configuration:
+ *   - CS pin: P0.17 (GPIO_ACTIVE_LOW)
+ *   - CLK pin: P0.19
+ *   - Frequency: 32 MHz (tCSS0 ≥ 20 ns per MX25R6435 datasheet Section 8-10)
+ *   - Reference: MDBT50Q datasheet Section 2.1 (pin map), Section 3.2 (flash)
+ * 
+ * Hardware Caveats (see .github/docs/HARDWARE_FLASH_CAVEATS.md):
+ *   - Pull-up resistors: WP# (IO2/P0.21) and HOLD# (IO3/P1.0) should be pulled
+ *     to VCC if not actively controlled. Internal pull-ups disabled when connected.
+ *   - SPI timing: CS# setup/hold times verified at 32 MHz (tCSS0 ≥ 20 ns)
+ *   - Power sequencing: Flash should power up after/simultaneously with MCU.
+ *     Verify MAX20360 PMIC ramp timing ensures flash VCC stable before QSPI access.
+ *   - Write cycle timing: Page program ~3-10ms, sector erase ~300-400ms.
+ *     Nordic QSPI driver should poll WIP bit automatically.
+ *   - Deep Power-Down: Configured with t-enter-dpd=10ms, t-exit-dpd=35ms.
+ *     Driver should handle DPD entry/exit automatically during sleep.
+ * ============================================================================= */
+&qspi {
+	status = "okay";
+	pinctrl-0 = <&qspi_flash>;
+	pinctrl-1 = <&qspi_flash_sleep>;
+	pinctrl-names = "default", "sleep";
+	
+	mx25r64: mx25r6435f@0 {
+		compatible = "nordic,qspi-nor";
+		reg = <0>;
+		status = "okay";
+		sck-frequency = <32000000>;  /* 32 MHz for production - verify tCSS0 ≥ 20 ns timing */
+		
+		jedec-id = [c2 28 17];  /* Macronix MX25R6435F JEDEC ID */
+		sfdp-bfp = [
+			e5 20 f1 ff  ff ff ff 03  44 eb 08 6b  08 3b 04 bb
+			ee ff ff ff  ff ff 00 ff  ff ff 00 ff  0c 20 0f 52
+			10 d8 00 ff  23 72 f5 00  82 ed 04 cc  44 83 68 44
+			30 b0 30 b0  f7 c4 d5 5c  00 be 29 ff  f0 d0 ff ff
+		];
+		size = <67108864>;  /* 64 Mb = 8 MB */
+		
+		/* Deep Power-Down (DPD) configuration for ultra-low power standby */
+		/* Note: Driver should automatically enter DPD during sleep and exit before access */
+		has-dpd;
+		t-enter-dpd = <10000>;   /* 10 µs - time to enter DPD mode */
+		t-exit-dpd = <35000>;    /* 35 µs - time to exit DPD mode (must wait before access) */
+		
+		/* Power sequencing note: Flash VCC must be stable before QSPI access.
+		 * MAX20360 PMIC should ensure proper power-up sequencing.
+		 * If flash access fails on cold boot, add initialization delay in driver. */
+		
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			
+			/* Slot1: OTA staging area */
+			slot1_partition: partition@0 {
+				label = "image-1-ota";
+				reg = <0x00000 0x80000>;  /* 512 KB */
+			};
+
+			/* MCUBoot scratch partition (atomic swap) */
+			scratch_partition: partition@80000 {
+				label = "image-scratch";
+				reg = <0x80000 0x1000>;  /* 4 KB */
+			};
+
+			/* Slot2: Fallback app */
+			slot2_partition: partition@81000 {
+				label = "image-2-fallback";
+				reg = <0x81000 0x100000>;  /* 1 MB */
+			};
+
+			/* NVS storage (config) */
+			nvs_partition: partition@181000 {
+				label = "nvs_storage";
+				reg = <0x181000 0x20000>;  /* 128 KB */
+			};
+
+			/* Calibration (production-locked, read-only) */
+			calibration_partition: partition@1A1000 {
+				label = "calibration";
+				reg = <0x1A1000 0x10000>;  /* 64 KB */
+				read-only;
+			};
+
+			/* Reserved external partition */
+			reserved_ext_partition: partition@1B1000 {
+				label = "reserved-ext";
+				reg = <0x1B1000 0x4000>;  /* 16 KB */
+			};
+
+			/* LittleFS partition (sensor logs) */
+			littlefs_partition: partition@1B5000 {
+				label = "littlefs_storage";
+				reg = <0x1B5000 0x200000>;  /* 2 MB */
+			};
+
+			/* User data archive */
+			user_data_partition: partition@3B5000 {
+				label = "user-data";
+				reg = <0x3B5000 0x44B000>;  /* 4.3 MB */
+			};
+		};
+	};
+};
+
+/* =============================================================================
+ * Disable Conflicting Peripherals
+ * ============================================================================= */
+/* LEDs conflict with I2C0 pins */
+&led0 {
+	status = "disabled";
+};
+
+&led1 {
+	status = "disabled";
+};
+
+/* PWM0 conflicts with I2C0 pins */
+&pwm0 {
+	status = "disabled";
+};
+
+/* SPI1 disabled (conflicts with I2C1 - same hardware instance) */
+&spi1 {
+	status = "disabled";
+};
+
+
+/* =============================================================================
+ * Pin Control (Pinctrl) Configuration
+ * =============================================================================
+ * All pin configurations must be defined before being referenced
+ * ============================================================================= */
+&pinctrl {
+	/* I2C0 pinctrl - Main board bus (P0.13/P0.14) */
+	i2c0_custom: i2c0_custom {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SDA, 0, 13)>,
+				<NRF_PSEL(TWIM_SCL, 0, 14)>;
+		};
+	};
+
+	i2c0_sleep_custom: i2c0_sleep_custom {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SDA, 0, 13)>,
+				<NRF_PSEL(TWIM_SCL, 0, 14)>;
+			low-power-enable;
+		};
+	};
+
+	/* I2C1 pinctrl - Sensor hub bus (P0.16/P0.15) */
+	i2c1_sensor_hub: i2c1_sensor_hub {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SDA, 0, 16)>,
+				<NRF_PSEL(TWIM_SCL, 0, 15)>;
+		};
+	};
+
+	i2c1_sensor_hub_sleep: i2c1_sensor_hub_sleep {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SDA, 0, 16)>,
+				<NRF_PSEL(TWIM_SCL, 0, 15)>;
+			low-power-enable;
+		};
+	};
+
+	/* SPI2 pinctrl - Display (P1.8/P0.26) */
+	spi2_display: spi2_display {
+		group1 {
+			psels = <NRF_PSEL(SPIM_SCK, 1, 8)>,
+				<NRF_PSEL(SPIM_MOSI, 0, 26)>;
+		};
+	};
+
+	spi2_display_sleep: spi2_display_sleep {
+		group1 {
+			psels = <NRF_PSEL(SPIM_SCK, 1, 8)>,
+				<NRF_PSEL(SPIM_MOSI, 0, 26)>;
+			low-power-enable;
+		};
+	};
+
+	/* QSPI pinctrl - External flash (CS on P0.17, CLK on P0.19) */
+	/* Hardware Note: WP# (IO2/P0.21) and HOLD# (IO3/P1.0) require pull-up resistors
+	 * to VCC if not actively controlled. Internal pull-ups are disabled when connected.
+	 * Verify hardware schematic includes pull-ups on these pins. */
+	qspi_flash: qspi_flash {
+		group1 {
+			psels = <NRF_PSEL(QSPI_SCK, 0, 19)>,  /* CLK: P0.19 */
+				<NRF_PSEL(QSPI_IO1, 0, 23)>,     /* IO0/MOSI: P0.23 */
+				<NRF_PSEL(QSPI_IO0, 0, 22)>,     /* IO1/MISO: P0.22 */
+				<NRF_PSEL(QSPI_IO2, 0, 21)>,     /* IO2/WP#: P0.21 (requires pull-up to VCC) */
+				<NRF_PSEL(QSPI_IO3, 1, 0)>,      /* IO3/HOLD#: P1.0 (requires pull-up to VCC) */
+				<NRF_PSEL(QSPI_CSN, 0, 17)>;    /* CS#: P0.17 (GPIO_ACTIVE_LOW) */
+		};
+	};
+	
+	qspi_flash_sleep: qspi_flash_sleep {
+		group1 {
+			psels = <NRF_PSEL(QSPI_SCK, 0, 19)>,  /* CLK: P0.19 */
+				<NRF_PSEL(QSPI_IO1, 0, 23)>,     /* IO0/MOSI: P0.23 */
+				<NRF_PSEL(QSPI_IO0, 0, 22)>,     /* IO1/MISO: P0.22 */
+				<NRF_PSEL(QSPI_IO2, 0, 21)>,     /* IO2/WP#: P0.21 */
+				<NRF_PSEL(QSPI_IO3, 1, 0)>,      /* IO3/HOLD#: P1.0 */
+				<NRF_PSEL(QSPI_CSN, 0, 17)>;     /* CS#: P0.17 */
+			low-power-enable;
+		};
+	};
+};

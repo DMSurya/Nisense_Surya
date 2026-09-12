@@ -1,0 +1,148 @@
+/* =============================================================================
+ * MCUboot Board Overlay - Raytac MDBT50Q-DB-40 (nRF52840)
+ * =============================================================================
+ * Configures MCUboot with QSPI external flash access and explicit DTS-based
+ * partition layout (no Partition Manager).
+ * Location: ${PROJECT_DIR}/sysbuild/mcuboot/boards/raytac_mdbt50q_db_40_nrf52840.overlay
+ * ============================================================================= */
+
+#include <zephyr/dt-bindings/pinctrl/nrf-pinctrl.h>
+
+/* =============================================================================
+ * Internal Flash Partitions (MCUboot view)
+ * =============================================================================
+ * MCUboot needs to know slot0 in order to validate and boot the application.
+ * The base board DTS has a different layout — override it here. */
+&flash0 {
+	/delete-node/ partitions;
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		boot_partition: partition@0 {
+			label = "mcuboot";
+			reg = <0x00000 0xa000>;  /* 40 KB */
+			read-only;
+		};
+
+		/* Primary application slot — 968 KB (includes 0x200-byte image header pad) */
+		slot0_partition: partition@a000 {
+			label = "image-0";
+			reg = <0xa000 0xf2000>;
+		};
+
+		storage_partition: partition@fc000 {
+			label = "storage";
+			reg = <0xfc000 0x4000>;
+		};
+	};
+};
+
+/* Ensure MCUboot itself links/runs from boot_partition at 0x0.
+ * The main app uses slot0_partition; without this override MCUboot can
+ * inherit slot0 and be linked at 0xA000, which breaks reset vectors.
+ */
+/ {
+	chosen {
+		zephyr,code-partition = &boot_partition;
+	};
+};
+
+/* Disable UART (not connected, save code space) */
+&uart0 {
+	status = "disabled";
+};
+
+/* Ensure GPIO is available for QSPI pins */
+&gpio0 {
+	status = "okay";
+};
+
+&gpio1 {
+	status = "okay";
+};
+
+/* =============================================================================
+ * Pin Control for QSPI
+ * ============================================================================= */
+&pinctrl {
+	/* QSPI pinctrl - External flash (CS on P0.17, CLK on P0.19) */
+	qspi_flash: qspi_flash {
+		group1 {
+			psels = <NRF_PSEL(QSPI_SCK, 0, 19)>,  /* CLK: P0.19 */
+				<NRF_PSEL(QSPI_IO1, 0, 23)>,     /* IO0/MOSI: P0.23 */
+				<NRF_PSEL(QSPI_IO0, 0, 22)>,     /* IO1/MISO: P0.22 */
+				<NRF_PSEL(QSPI_IO2, 0, 21)>,     /* IO2/WP#: P0.21 */
+				<NRF_PSEL(QSPI_IO3, 1, 0)>,      /* IO3/HOLD#: P1.0 */
+				<NRF_PSEL(QSPI_CSN, 0, 17)>;     /* CS#: P0.17 */
+		};
+	};
+
+	qspi_flash_sleep: qspi_flash_sleep {
+		group1 {
+			psels = <NRF_PSEL(QSPI_SCK, 0, 19)>,
+				<NRF_PSEL(QSPI_IO1, 0, 23)>,
+				<NRF_PSEL(QSPI_IO0, 0, 22)>,
+				<NRF_PSEL(QSPI_IO2, 0, 21)>,
+				<NRF_PSEL(QSPI_IO3, 1, 0)>,
+				<NRF_PSEL(QSPI_CSN, 0, 17)>;
+			low-power-enable;
+		};
+	};
+};
+
+/* =============================================================================
+ * QSPI - External Flash (MX25R6435F 64Mb / 8 MB)
+ * =============================================================================
+ * MCUboot needs the QSPI NOR flash device + partition definitions to access
+ * the secondary slot (slot1_partition) for OTA upgrades (overwrite-only direction;
+ * see docs/build/OTA_BOOTLOADER.md). Scratch remains until that migration lands.
+ * ============================================================================= */
+&qspi {
+	status = "okay";
+	pinctrl-0 = <&qspi_flash>;
+	pinctrl-1 = <&qspi_flash_sleep>;
+	pinctrl-names = "default", "sleep";
+
+	mx25r64: mx25r6435f@0 {
+		compatible = "nordic,qspi-nor";
+		reg = <0>;
+		status = "okay";
+		label = "external_flash";
+
+		sck-frequency = <32000000>;  /* 32 MHz */
+
+		jedec-id = [c2 28 17];  /* Macronix MX25R6435F JEDEC ID */
+		sfdp-bfp = [
+			e5 20 f1 ff  ff ff ff 03  44 eb 08 6b  08 3b 04 bb
+			ee ff ff ff  ff ff 00 ff  ff ff 00 ff  0c 20 0f 52
+			10 d8 00 ff  23 72 f5 00  82 ed 04 cc  44 83 68 44
+			30 b0 30 b0  f7 c4 d5 5c  00 be 29 ff  f0 d0 ff ff
+		];
+		size = <67108864>;  /* 64 Mb = 8 MB */
+
+		/* Deep Power-Down configuration */
+		has-dpd;
+		t-enter-dpd = <10000>;   /* 10 us */
+		t-exit-dpd = <35000>;    /* 35 us */
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			/* App secondary slot — 968 KB, must match slot0_partition size */
+			slot1_partition: partition@0 {
+				label = "image-1";
+				reg = <0x000000 0xf2000>;
+			};
+
+			/* MCUboot swap scratch (16 KB) — unused after overwrite-only */
+			scratch_partition: partition@f2000 {
+				label = "image-scratch";
+				reg = <0x0f2000 0x4000>;
+			};
+		};
+	};
+};

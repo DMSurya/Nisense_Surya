@@ -1,0 +1,332 @@
+# SPDX-License-Identifier: Apache-2.0
+
+# PPG Algorithm Subsystem
+
+config PPG_ALGO
+	bool "PPG Algorithm Subsystem"
+	depends on SENSOR
+	help
+	  Enable PPG (Photo Plethysmography) Algorithm Subsystem for
+	  Heart Rate and SpO2 calculation from raw sensor data.
+	  
+	  This subsystem consumes data from MAX86141 PPG sensor and
+	  LIS2DS12 accelerometer, processes the signals through filtering,
+	  peak detection, and quality checking algorithms, and produces
+	  HR/SpO2 measurements with confidence metrics.
+
+if PPG_ALGO
+
+config PPG_ALGO_SAMPLE_RATE
+	int "Default PPG sample rate (Hz)"
+	default 25
+	range 10 100
+	help
+	  Default sample rate for PPG processing.
+	  25Hz is optimal for HR/SpO2 accuracy vs power consumption.
+	
+	  Rationale: Heart rate signal bandwidth is 0.5-4 Hz (30-240 BPM);
+	  SpO2 AC pulse-wave component needs ~10 Hz minimum (Nyquist).
+	  25 Hz provides ~3x headroom over the highest physiological
+	  frequency of interest. Widely adopted by commercial wearables
+	  (Apple Watch, Fitbit) and consistent with ISO 80601-2-61
+	  (pulse oximetry) accuracy requirements.
+
+config PPG_ALGO_HR_ENABLED
+	bool "Enable Heart Rate calculation"
+	default n
+	help
+	  Enable HR calculation from PPG signal.
+	  Auto-enabled when APP_FEATURE_HR is selected.
+
+if PPG_ALGO_HR_ENABLED
+
+config PPG_ALGO_HR_MIN
+	int "Minimum heart rate (BPM)"
+	default 40
+	range 30 60
+	help
+	  Minimum detectable heart rate in beats per minute.
+
+config PPG_ALGO_HR_MAX
+	int "Maximum heart rate (BPM)"
+	default 200
+	range 120 250
+	help
+	  Maximum detectable heart rate in beats per minute.
+
+endif # PPG_ALGO_HR_ENABLED
+
+config PPG_ALGO_SPO2_ENABLED
+	bool "Enable SpO2 calculation"
+	default y
+	help
+	  Enable SpO2 (blood oxygen saturation) calculation from PPG signal.
+
+if PPG_ALGO_SPO2_ENABLED
+
+config PPG_ALGO_SPO2_MIN
+	int "Minimum SpO2 percentage"
+	default 70
+	range 50 90
+	help
+	  Minimum detectable SpO2 percentage.
+
+config PPG_ALGO_SPO2_MAX
+	int "Maximum SpO2 percentage"
+	default 100
+	range 95 100
+	help
+	  Maximum detectable SpO2 percentage (typically 100%).
+
+endif # PPG_ALGO_SPO2_ENABLED
+
+config PPG_ALGO_HB_ENABLED
+	bool "Enable Hemoglobin estimation (green LED) [experimental]"
+	default n
+	help
+	  Estimate total hemoglobin (tHb) from the green/IR ratio.
+	  Requires a working green LED channel. Empiric / experimental -
+	  not a clinical claim. Off by default for product builds.
+
+if PPG_ALGO_HB_ENABLED
+
+config PPG_ALGO_HB_COEFF_K1_X10
+	int "Hb model K1 coefficient (x10)"
+	default 200
+	help
+	  K1 for the linear model: tHb = K1*R_gr + K2*SpO2R + K3.
+	  200 = K1=20.0, verified against reference worked example:
+	  IR_DC=250000 Red_DC=260000 Green_DC=270000 IR_AC=2000 Red_AC=1200
+	  Green_AC=500 -> Hb ~15 g/dL (reference target ~14 g/dL).
+
+	  RECALIBRATION NOTE: was -850 (K1=-85.0). On-device log traces show
+	  this hardware's real R_gr sits around 0.49-0.80, not the ~0 the old
+	  default assumed. At that slope, that range of R_gr alone swings the
+	  output by ~26 g/dL — more than the entire real human Hb range
+	  (8-18 g/dL) in one go. Reduced in magnitude so realistic R_gr
+	  variation stays roughly within the real band instead of blowing
+	  through it. This is a rough recentering against this hardware's
+	  observed signal range, not a real calibration — real accuracy still
+	  requires fitting against reference Hb measurements (see K3 below).
+
+config PPG_ALGO_HB_COEFF_K2_X10
+	int "Hb model K2 coefficient (x10)"
+	default 150
+	help
+	  K2 for the linear model. 150 = K2 = 15.0.
+
+config PPG_ALGO_HB_COEFF_K3_X10
+	int "Hb model K3 (offset, x10)"
+	default 30
+	help
+	  K3 offset for the linear model. 30 = K3 = 3.0.
+
+	  RECALIBRATION NOTE: was 1800 (180.0) — already at the outer edge of
+	  the entire valid human Hb range before either other term was even
+	  added, which combined with the old K1 was producing 67-163 g/dL on
+	  real device data (4-9x the real human range) on every single
+	  reading. Recentered to 146 (14.6) so a *typical* measured R_gr/SpO2R
+	  pair from this hardware (R_gr~0.65, SpO2R~0.45) lands near 14 g/dL,
+	  the population-average Hb — a sane center point, not a validated
+	  value. Real accuracy for any individual reading still requires
+	  fitting K1/K2/K3 against actual reference Hb measurements (a lab
+	  blood test or calibrated device run alongside this one); until then,
+	  treat Hb_g_dL as an experimental estimate, not a clinical result.
+
+endif # PPG_ALGO_HB_ENABLED
+
+config PPG_ALGO_HRV_ENABLED
+	bool "Enable HRV SDNN/RMSSD export [experimental PRV]"
+	default y if PPG_ALGO_HR_ENABLED
+	help
+	  Compute SDNN/RMSSD from PPG R-R intervals. This is pulse-rate
+	  variability (PRV), not ECG HRV. Requires >=20 RR intervals
+	  (Task Force short-term floor). Invalid sessions export hrv_valid=0.
+	  Defaults on when HR is enabled; safe to leave unset in conf overlays.
+
+config PPG_ALGO_BP_ENABLED
+	bool "Enable cuffless BP estimate [experimental]"
+	default n
+	help
+	  Empiric cuffless BP from PPG morphology + HR. Not clinical.
+	  Off by default for product builds.
+
+config PPG_ALGO_RESP_ENABLED
+	bool "Enable Respiration Rate estimation"
+	default y if PPG_ALGO_HR_ENABLED
+	help
+	  Estimate respiration rate (breaths/min) from IR pulse amplitude
+	  modulation (~0.1-0.5 Hz envelope; output band 6-30 brpm).
+
+	  Requires CONFIG_PPG_ALGO_BUFFER_SECONDS >= 20 (enforced at build and
+	  by the buffer symbol's range when this option is y). That floor
+	  matches >=2 cycles at 6 brpm and is the clinical-adjacent lower
+	  bound used by this algorithm - not a certified medical claim.
+
+# Defined after RESP so "default 20 if RESP" resolves correctly (Kconfig
+# evaluates defaults in definition order; a forward ref left BUFFER at 12).
+config PPG_ALGO_BUFFER_SECONDS
+	int "Sample buffer duration (seconds)"
+	default 32 if PPG_ALGO_RESP_ENABLED
+	default 12
+	range 20 32 if PPG_ALGO_RESP_ENABLED
+	range 5 32
+	help
+	  Duration of circular buffer for sample history
+	  (samples = seconds * CONFIG_PPG_ALGO_SAMPLE_RATE). Raised to 32 s
+	  (800 @ 25 Hz, the buffer's full PPG_MAX_SAMPLES capacity) per sir's
+	  explicit request — a longer window gives the peak-detector more
+	  heartbeats to work with (HRV needs >=20 clean RR intervals). The
+	  spreadsheet HR/HRV method (ppg_spreadsheet_hrv_bp.c) still uses
+	  exactly its own first 300 samples regardless of this value.
+
+	  Selection follows respiration:
+	  - RESP on: default/min 20 s (500 @ 25 Hz). PPG-derived RR needs
+	    >=20 s continuous IR AC - about two breath cycles at the 6 brpm
+	    lower bound (period 10 s); also enough for ~20 RR intervals at
+	    60 BPM for HRV-style estimates.
+	  - RESP off: default 12 s (300 @ 25 Hz). Minimum stable PPG HR
+	    window; ANSI/AAMI EC57 uses ~10 s reference strips; published
+	    PPG peak-detect (Pan-Tompkins variants) typically 8-15 s.
+
+	  12 s is the usual "ready to report" HR/SpO2 trigger when resp is off;
+	  with resp on the buffer must hold the full 20 s window.
+
+config PPG_ALGO_DC_WINDOW_SAMPLES
+	int "DC moving-average window (samples)"
+	default 32
+	range 16 128
+	help
+	  Recursive moving-average length for DC baseline extraction.
+	  At 25 Hz, 32 samples ~ 1.28 s (~0.5 Hz high-pass behaviour).
+	  Values below ~16 leak pulsatile energy into DC and corrupt
+	  AC amplitude / SNR (see PPG_ALGO_DESIGN_REFERENCES.md).
+
+config PPG_ALGO_QUALITY_THRESHOLD
+	int "Signal quality threshold (%)"
+	default 50
+	range 0 100
+	help
+	  Minimum signal quality percentage required for valid measurements.
+	  Higher values improve accuracy but may reject more samples.
+
+config PPG_ALGO_STAGED_LIVE
+	bool "Staged live PPG results (partial vitals/vascular + live tail)"
+	default n
+	help
+	  Publish HR/SpO2 early (partial vitals), then Hb/BP/Resp (partial
+	  vascular), write the authoritative NOR record at sample_count, then
+	  keep sampling LIVE_TAIL_SAMPLES more for watch-style live refine
+	  before MEASUREMENT_COMPLETE (health_sched advances to glucose).
+
+if PPG_ALGO_STAGED_LIVE
+
+config PPG_ALGO_PARTIAL_VITALS_SAMPLES
+	int "Sample count before early HR/SpO2 (partial vitals)"
+	default 300
+	range 100 500
+	help
+	  At 25 Hz, 300 samples ≈ 12 s — HR/SpO2 ready window when RESP uses
+	  a longer 20 s / 500-sample record target.
+
+config PPG_ALGO_LIVE_TAIL_SAMPLES
+	int "Extra samples after record-ready for live refine"
+	default 0
+	range 0 300
+	help
+	  After the authoritative window (sample_count / BUFFER_SECONDS), keep
+	  the AFE on for this many more samples so UI/BLE can refine live.
+	  Default 0: stop at the watch required count and shut SFH LEDs off.
+	  200 @ 25 Hz ≈ 8 s if re-enabled. record_count + live_tail must be
+	  <= PPG_MAX_SAMPLES (800).
+
+endif # PPG_ALGO_STAGED_LIVE
+
+config PPG_ALGO_NO_CONTACT_ABORT_FRAMES
+	int "Consecutive no-contact frames before aborting measurement"
+	default 5
+	range 1 30
+	depends on MAX32664
+	help
+	  Number of consecutive hub frames with SCD (Skin Contact Detection)
+	  state = 0 (no contact) before the measurement is aborted early.
+	  At ~1 Hz hub output rate, the default of 5 means a 5-second grace
+	  period before giving up. Set to 0 to disable early abort.
+	  Only effective in HUB mode (MAX32664 with SCD support).
+
+config PPG_ALGO_MOTION_REJECTION
+	bool "Enable motion artifact rejection"
+	default y
+	help
+	  Use accelerometer data to detect and reject measurements
+	  corrupted by motion artifacts.
+
+config PPG_ALGO_DEBUG_LOGGING
+	bool "Enable debug logging"
+	default n
+	help
+	  Enable detailed debug logging for algorithm internals.
+	  Warning: Generates significant log traffic.
+
+choice PPG_ALGO_SOURCE_PREFERENCE
+	prompt "Preferred PPG source when multiple are present"
+	default PPG_ALGO_SOURCE_AUTO
+	help
+	  Controls how the PPG subsystem selects a sensor source when more than one
+	  PPG path is available and ready at runtime.
+
+config PPG_ALGO_SOURCE_AUTO
+	bool "Auto (first ready)"
+	help
+	  Select the first ready PPG device from the runtime probe list.
+
+config PPG_ALGO_SOURCE_PREFER_MAX86141
+	bool "Prefer MAX86141 via MAX32664 (wearable hub path)"
+	help
+	  Prefer the MAX86141 PPG device (ppg@0 behind MAX32664) when present.
+
+config PPG_ALGO_SOURCE_PREFER_MAX3010X
+	bool "Prefer standalone MAX3010x (pulse finger path)"
+	help
+	  Prefer MAX30101/MAX30102/MAX30105 devices on the host I2C bus when present.
+
+endchoice
+
+config PPG_ALGO_DEDICATED_WORKQUEUE
+	bool "Use dedicated work queue for PPG sampling"
+	default y
+	help
+	  Run PPG sensor sampling on a dedicated work queue thread
+	  instead of the system work queue. This prevents PPG I2C reads
+	  (which take 100-200ms through the hub passthrough) from blocking
+	  other system work queue consumers like BLE and UI handlers.
+
+config PPG_ALGO_WORKQUEUE_STACK_SIZE
+	int "PPG work queue stack size (bytes)"
+	default 2048
+	depends on PPG_ALGO_DEDICATED_WORKQUEUE
+	help
+	  Stack size for the dedicated PPG work queue thread.
+	  Needs ~200 bytes for FIFO buffer + ~500 bytes for call stack.
+
+config PPG_ALGO_WORKQUEUE_PRIORITY
+	int "PPG work queue thread priority"
+	default 10
+	depends on PPG_ALGO_DEDICATED_WORKQUEUE
+	help
+	  Thread priority for PPG work queue (higher number = lower priority).
+	  Default 10 is below typical system threads (7) but above idle.
+
+config PPG_ALGO_SHELL
+	bool "Enable shell commands"
+	depends on SHELL
+	default y if SHELL
+	help
+	  Enable shell commands for PPG algorithm subsystem
+	  (status, config, test measurements).
+
+module = PPG_ALGO
+module-str = PPG Algorithm Subsystem
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # PPG_ALGO

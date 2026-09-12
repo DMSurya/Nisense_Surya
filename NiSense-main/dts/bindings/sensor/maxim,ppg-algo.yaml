@@ -1,0 +1,94 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Maxim PPG Algorithm Sensor
+  
+  Software-based HR and SpO2 algorithm that processes raw PPG data from
+  a parent sensor (MAX86141 AFE or MAX32664 hub in RAW mode).
+  
+  This driver reads raw IR/RED channels from the parent sensor, runs 
+  PPG signal processing algorithms, and exposes computed HR/SpO2 values
+  via standard Zephyr sensor channels.
+  
+  Example device tree:
+    ppg_sensor: ppg-algo {
+        compatible = "maxim,ppg-algo";
+        parent-sensor = <&max86141>;  /* or <&max32664_hub> */
+        sample-rate-hz = <25>;
+        hr-min-bpm = <40>;
+        hr-max-bpm = <220>;
+        quality-threshold = <50>;
+        motion-rejection;
+    };
+
+compatible: "maxim,ppg-algo"
+
+properties:
+  parent-sensor:
+    type: phandle
+    required: true
+    description: |
+      Parent sensor that provides raw PPG data (IR, RED channels).
+      Can be MAX86141 AFE (PASSTHROUGH mode) or MAX32664 hub (RAW mode).
+  
+  accel-sensor:
+    type: phandle
+    description: |
+      Optional accelerometer sensor for motion rejection.
+      Required for PASSTHROUGH mode if motion-rejection is enabled.
+      In PASSTHROUGH mode, use LIS2DS12 accelerometer device.
+      In HUB/RAW modes, accelerometer data comes from parent-sensor.
+  
+  measurement-type:
+    type: int
+    required: true
+    description: |
+      Fixed measurement type for this sensor instance:
+        0 = SpO2 (uses IR + Red LED channels)
+        1 = HR (uses Green LED channel)
+      Each sensor instance is dedicated to one measurement type.
+      Create separate device tree nodes for concurrent SpO2 and HR measurements.
+    enum:
+      - 0  # PPG_MEAS_SPO2
+      - 1  # PPG_MEAS_HR
+  
+  sample-rate-hz:
+    type: int
+    default: 25
+    description: |
+      PPG sampling rate in Hz. Must match parent sensor configuration.
+      Typical values: 25, 50, 100 Hz
+  
+  hr-min-bpm:
+    type: int
+    default: 40
+    description: |
+      Minimum valid heart rate in beats per minute.
+      Values below this threshold are rejected.
+  
+  hr-max-bpm:
+    type: int
+    default: 220
+    description: |
+      Maximum valid heart rate in beats per minute.
+      Values above this threshold are rejected.
+  
+  quality-threshold:
+    type: int
+    default: 50
+    description: |
+      Minimum signal quality percentage (0-100) for valid HR/SpO2.
+      Results with quality below this threshold are marked invalid.
+  
+  motion-rejection:
+    type: boolean
+    description: |
+      Enable motion artifact rejection using accelerometer data.
+      Requires accelerometer support in parent sensor.
+  
+  sample-count:
+    type: int
+    default: 300
+    description: |
+      Number of samples to collect for each HR/SpO2 measurement.
+      Typical values: 200-500 samples at 25 Hz = 8-20 seconds measurement time.

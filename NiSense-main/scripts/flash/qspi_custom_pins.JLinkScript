@@ -1,0 +1,42 @@
+/*********************************************************************
+* JLinkScript for nRF52840 with custom QSPI pin configuration
+* Board: Raytac MDBT50Q-DB-40 (NiSense HCM)
+* QSPI Flash: MX25R6435F
+*
+* Pin mapping (non-standard):
+*   SCK:  P0.19
+*   CSN:  P0.17
+*   IO0:  P0.22  (DK default: P0.20)
+*   IO1:  P0.23  (DK default: P0.21)
+*   IO2:  P0.21  (DK default: P0.22)
+*   IO3:  P1.0   (DK default: P0.23)
+*
+* Register format: bits [4:0]=pin, bit [5]=port (0=P0,1=P1), bit [31]=disconnect
+**********************************************************************/
+
+void ConfigTargetSettings(void) {
+  // Report custom QSPI configuration
+  JLINK_SYS_Report("-- Custom QSPI pin configuration for NiSense HCM --");
+}
+
+int SetupTarget(void) {
+  // Configure nRF52840 QSPI PSEL registers with custom pin mapping
+  // These must be set BEFORE the J-Link QSPI flashloader initializes
+  
+  // QSPI base: 0x40029000
+  // PSEL.SCK  = P0.19 (0x13)
+  JLINK_MEM_WriteU32(0x40029524, 0x00000013);
+  // PSEL.CSN  = P0.17 (0x11)
+  JLINK_MEM_WriteU32(0x40029528, 0x00000011);
+  // PSEL.IO0  = P0.22 (0x16)
+  JLINK_MEM_WriteU32(0x4002952C, 0x00000016);
+  // PSEL.IO1  = P0.23 (0x17)
+  JLINK_MEM_WriteU32(0x40029530, 0x00000017);
+  // PSEL.IO2  = P0.21 (0x15)
+  JLINK_MEM_WriteU32(0x40029534, 0x00000015);
+  // PSEL.IO3  = P1.0  (0x20 = port 1, pin 0)
+  JLINK_MEM_WriteU32(0x40029538, 0x00000020);
+  
+  JLINK_SYS_Report("QSPI PSEL registers configured for custom pin mapping");
+  return 0;
+}

@@ -1,0 +1,4 @@
+connect
+halt
+mem32 0x00000000 2
+exit

@@ -1,0 +1,23 @@
+connect
+halt
+
+// Read default_flash_map array at 0x7C84
+// This is MCUboot's flash map - should have primary and secondary slots
+mem32 0x7C84 32
+
+// Read flash_area structure for primary slot
+// flash_area struct: fa_id, fa_device_id, fa_off, fa_size
+mem32 0x7C84 8
+
+// Check R0-R3 at time of fault - R1 was flash_area pointer
+// Let's see what flash_area was passed
+// From earlier: R1 = 0x200032C0 at fault time, but that's on stack
+// The actual flash_area should be in the default_flash_map
+
+// Read first few entries of default_flash_map
+mem32 0x7C84 16
+mem32 0x7CA4 16
+mem32 0x7CC4 16
+
+exit
+

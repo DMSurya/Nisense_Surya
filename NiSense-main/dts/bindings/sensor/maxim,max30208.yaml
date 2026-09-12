@@ -1,0 +1,85 @@
+# Copyright (c) 2025 AARMS Value Chain
+# SPDX-License-Identifier: Apache-2.0
+
+description: Maxim MAX30208 digital temperature sensor
+
+compatible: "maxim,max30208"
+
+include: [sensor-device.yaml, i2c-device.yaml]
+
+properties:
+  int-gpios:
+    type: phandle-array
+    description: |
+      Interrupt GPIO pin (active low).
+      When data is ready or alarm thresholds are crossed, the INT pin
+      is asserted low. Use GPIO_ACTIVE_LOW flag.
+
+  temp-alarm-high:
+    type: int
+    description: |
+      High temperature alarm threshold in millidegrees Celsius.
+      Range: -40000 to 105000 (corresponds to -40°C to 105°C)
+      Default: 40000 (40°C)
+
+  temp-alarm-low:
+    type: int
+    description: |
+      Low temperature alarm threshold in millidegrees Celsius.
+      Range: -40000 to 105000 (corresponds to -40°C to 105°C)
+      Default: 0 (0°C)
+
+  fifo-samples:
+    type: int
+    default: 1
+    enum:
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+      - 7
+      - 8
+      - 9
+      - 10
+      - 11
+      - 12
+      - 13
+      - 14
+      - 15
+      - 16
+      - 17
+      - 18
+      - 19
+      - 20
+      - 21
+      - 22
+      - 23
+      - 24
+      - 25
+      - 26
+      - 27
+      - 28
+      - 29
+      - 30
+      - 31
+      - 32
+    description: |
+      Number of samples to read from FIFO for averaging (1-32).
+      
+      FIFO depth: 32 samples (16-bit each), roll-over mode enabled.
+      
+      Higher values provide:
+      - Better noise reduction
+      - Improved accuracy (reduced thermal noise)
+      - Slower response time (more samples to accumulate)
+      
+      Recommended values:
+      - 1: Fastest response, no averaging (default)
+      - 4: Good balance for general use
+      - 8: High accuracy for medical/precision applications
+      - 16-32: Maximum averaging for stable measurements
+      
+      Note: Conversion time is ~15-50ms per sample.
+      Total read time = conversion_time x fifo_samples

@@ -1,0 +1,28 @@
+connect
+halt
+
+// Check the CFSR to see what kind of fault
+mem32 0xE000ED28 1
+
+// Check HFSR 
+mem32 0xE000ED2C 1
+
+// Check BFAR (bus fault address)
+mem32 0xE000ED38 1
+
+// Check what's at the faulting PC (0x77E0 is BusFault handler)
+// The actual faulting PC should be on the stack
+// PSP = 0x20003670
+
+// Read PSP exception frame
+mem32 0x20003670 8
+
+// Read the image header that MCUboot is trying to read
+mem32 0xA000 16
+
+// Check if MCUboot is trying to access external flash
+// QSPI memory-mapped region starts at 0x12000000
+mem32 0x12000000 4
+
+exit
+

@@ -1,0 +1,13 @@
+/* Sensor group: MAX20360 internal SAR ADC (haptic/ADC slave, 7-bit 0x50).
+ * Same physical chip as max20360@28 — the ADC block has its own I2C address.
+ * Rail selection goes through the IVMON mux owned by the regulator parent.
+ */
+&i2c0 {
+	max20360_adc: max20360_adc@50 {
+		compatible = "maxim,max20360-adc";
+		reg = <0x50>;
+		status = "okay";
+		maxim,pmic = <&max20360_regulators>;
+		#io-channel-cells = <1>;
+	};
+};

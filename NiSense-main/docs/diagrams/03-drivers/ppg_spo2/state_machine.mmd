@@ -1,0 +1,76 @@
+%%{init: {'theme': 'base'}}%%
+%% =============================================================================
+%% PPG/SpO2 DRIVER STATE MACHINE
+%% =============================================================================
+%% Purpose: Shows the MAX32664 driver operational states and transitions
+%% Scope: Driver init, mode transitions, measurement states, error handling
+%% Assumptions:
+%%   - Init at POST_KERNEL level
+%%   - Mode set at compile time via Kconfig
+%%   - Variant auto-detected at runtime
+%% =============================================================================
+
+stateDiagram-v2
+    [*] --> UNINITIALIZED: Power On
+
+    state "Driver Initialization" as INIT {
+        UNINITIALIZED --> HW_RESET: driver_init()
+        HW_RESET --> DETECT_VARIANT: Reset Complete
+        DETECT_VARIANT --> DETECT_AFE: Variant Identified
+        DETECT_AFE --> DETECT_ACCEL: AFE WHOAMI OK
+        DETECT_ACCEL --> CONFIGURE_MODE: Accel WHOAMI OK
+        CONFIGURE_MODE --> READY: Mode Configured
+        
+        DETECT_VARIANT --> INIT_ERROR: Unknown Variant
+        DETECT_AFE --> INIT_ERROR: AFE Not Found
+        DETECT_ACCEL --> PARTIAL_INIT: Accel Not Found
+        PARTIAL_INIT --> READY: Continue w/o Accel
+    }
+
+    state "Operational" as OP {
+        READY --> HUB_MODE: CONFIG_MAX32664_MODE_HUB
+        READY --> RAW_MODE: CONFIG_MAX32664_MODE_RAW
+        READY --> PASSTHROUGH_MODE: CONFIG_MAX32664_MODE_PASSTHROUGH
+
+        state "HUB Mode" as HUB_MODE {
+            HUB_IDLE --> HUB_MEASURING: algo_start()
+            HUB_MEASURING --> HUB_IDLE: algo_stop()
+            HUB_MEASURING --> HUB_DATA_READY: Data Available
+            HUB_DATA_READY --> HUB_MEASURING: sample_fetch()
+        }
+
+        state "RAW Mode" as RAW_MODE {
+            RAW_IDLE --> RAW_SAMPLING: enable()
+            RAW_SAMPLING --> RAW_IDLE: disable()
+            RAW_SAMPLING --> RAW_FIFO_READY: FIFO Threshold
+            RAW_FIFO_READY --> RAW_SAMPLING: Read FIFO
+        }
+
+        state "PASSTHROUGH Mode" as PASSTHROUGH_MODE {
+            PT_IDLE --> PT_ACTIVE: sensor_sample_fetch()
+            PT_ACTIVE --> PT_READ_PPG: Read AFE
+            PT_READ_PPG --> PT_READ_ACCEL: Read Motion
+            PT_READ_ACCEL --> PT_PROCESS: Run ppg_algo
+            PT_PROCESS --> PT_IDLE: Return Result
+        }
+    }
+
+    state "Error States" as ERR {
+        INIT_ERROR --> [*]: Fatal - Device Not Ready
+        I2C_ERROR --> RETRY: Retry < 3
+        RETRY --> READY: Success
+        RETRY --> I2C_ERROR: Failed
+        I2C_ERROR --> COMM_FAILURE: Retry >= 3
+        COMM_FAILURE --> [*]: Fatal - Device Offline
+    }
+
+    state "Power States" as PWR {
+        READY --> STANDBY: power_off()
+        STANDBY --> READY: power_on()
+        READY --> DEEP_STANDBY: deep_sleep()
+        DEEP_STANDBY --> HW_RESET: wake()
+    }
+
+    HUB_MODE --> I2C_ERROR: I2C Failure
+    RAW_MODE --> I2C_ERROR: I2C Failure
+    PASSTHROUGH_MODE --> I2C_ERROR: I2C Failure

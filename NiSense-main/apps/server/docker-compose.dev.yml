@@ -1,0 +1,26 @@
+# Dev overrides: hot-reload API under debugpy, publish API on localhost, and a
+# Mailhog inbox for OTP/email testing. Compose:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev up
+
+services:
+  api:
+    command: >-
+      python -m debugpy --listen 0.0.0.0:5678
+      -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      NISENSE_ENV: dev
+      NISENSE_OIDC_PROVIDER: dev
+      NISENSE_LOG_LEVEL: DEBUG
+    volumes:
+      - ./:/app
+    # Published only to localhost; reach remotely via SSH tunnel, never the router.
+    ports:
+      - "127.0.0.1:8000:8000"   # API
+      - "127.0.0.1:5678:5678"   # debugpy
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025"   # web UI
+    profiles: ["dev"]

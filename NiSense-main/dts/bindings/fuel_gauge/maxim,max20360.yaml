@@ -1,0 +1,33 @@
+description: |
+  Maxim MAX20360 fuel gauge (ModelGauge m5). Register map matches MAX17260
+  Table 17 (MAX20360 datasheet “MAX17620” is a typo). I²C 0x36 (7-bit).
+
+compatible: "maxim,max20360-fuel-gauge"
+
+include:
+  - name: i2c-device.yaml
+  - name: fuel-gauge.yaml
+
+properties:
+  reg:
+    required: true
+    description: |
+      I2C address of the fuel gauge (7-bit 0x36).
+
+  design-capacity-mah:
+    type: int
+    description: |
+      Pack design capacity in mAh (DesignCap). Programmed on POR / mismatch.
+
+  design-voltage-millivolt:
+    type: int
+    default: 3700
+    description: |
+      Nominal design voltage in mV for FUEL_GAUGE_DESIGN_VOLTAGE.
+
+  rsense-milliohms:
+    type: int
+    default: 10
+    description: |
+      Sense resistor between CSPH–CSN in milliohms (board: 10 mΩ / 0.01 Ω).
+      Current LSB = 1.5625 µV / RSENSE; capacity LSB = 5.0 µVh / RSENSE.

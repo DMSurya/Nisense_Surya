@@ -1,0 +1,18 @@
+config FUEL_GAUGE_MAX20360
+	bool "Maxim MAX20360 PMIC Fuel Gauge"
+	depends on DT_HAS_MAXIM_MAX20360_FUEL_GAUGE_ENABLED
+	select I2C
+	help
+	  Enable driver for Maxim MAX20360 fuel gauge.
+	  Uses ModelGauge m5 EZ algorithm compatible with MAX17620 register mapping.
+	  Operates on dedicated I2C address 0x36 (7-bit) / 0x6C-0x6D (8-bit).
+
+if FUEL_GAUGE_MAX20360
+
+config FUEL_GAUGE_MAX20360_INIT_PRIORITY
+	int "MAX20360 fuel gauge initialization priority"
+	default 75
+	help
+	  Initialization priority of the MAX20360 fuel gauge driver.
+	  
+endif # FUEL_GAUGE_MAX20360

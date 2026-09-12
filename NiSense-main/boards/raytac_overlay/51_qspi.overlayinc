@@ -1,0 +1,113 @@
+/* QSPI group: controller + pinctrl + partitions
+ *
+ * External NOR map (8 MB). Resource = UI A/B; Model = clinical pack A/B
+ * (glucose wearable+pulse now; future PPG/HR/SpO2). App = hub MSBL / blobs.
+ * Changing offsets requires manufacturing reflash — see PARTITION_LAYOUT.md.
+ */
+&pinctrl {
+	qspi_flash: qspi_flash {
+		group1 {
+			psels = <NRF_PSEL(QSPI_SCK, 0, 19)>,
+				<NRF_PSEL(QSPI_IO1, 0, 23)>,
+				<NRF_PSEL(QSPI_IO0, 0, 22)>,
+				<NRF_PSEL(QSPI_IO2, 0, 21)>,
+				<NRF_PSEL(QSPI_IO3, 1, 0)>,
+				<NRF_PSEL(QSPI_CSN, 0, 17)>;
+			bias-pull-up;
+		};
+	};
+
+	qspi_flash_sleep: qspi_flash_sleep {
+		group1 {
+			psels = <NRF_PSEL(QSPI_SCK, 0, 19)>,
+				<NRF_PSEL(QSPI_IO1, 0, 23)>,
+				<NRF_PSEL(QSPI_IO0, 0, 22)>,
+				<NRF_PSEL(QSPI_IO2, 0, 21)>,
+				<NRF_PSEL(QSPI_IO3, 1, 0)>,
+				<NRF_PSEL(QSPI_CSN, 0, 17)>;
+			low-power-enable;
+		};
+	};
+};
+
+&qspi {
+	status = "okay";
+	pinctrl-0 = <&qspi_flash>;
+	pinctrl-1 = <&qspi_flash_sleep>;
+	pinctrl-names = "default", "sleep";
+
+	mx25r64: mx25r6435f@0 {
+		compatible = "nordic,qspi-nor";
+		reg = <0>;
+		status = "okay";
+		label = "external_flash";
+		sck-frequency = <32000000>;
+		jedec-id = [c2 28 17];
+		sfdp-bfp = [
+			e5 20 f1 ff  ff ff ff 03  44 eb 08 6b  08 3b 04 bb
+			ee ff ff ff  ff ff 00 ff  ff ff 00 ff  0c 20 0f 52
+			10 d8 00 ff  23 72 f5 00  82 ed 04 cc  44 83 68 44
+			30 b0 30 b0  f7 c4 d5 5c  00 be 29 ff  f0 d0 ff ff
+		];
+		size = <67108864>;
+		has-dpd;
+		t-enter-dpd = <10000>;
+		t-exit-dpd = <35000>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			/* 1. App secondary — MUST match slot0 size for MCUboot */
+			slot1_partition: partition@0 {
+				label = "image-1";
+				reg = <0x000000 0xf2000>;
+			};
+			/* 2. MCUboot swap scratch (unused once overwrite-only validated) */
+			scratch_partition: partition@f2000 {
+				label = "image-scratch";
+				reg = <0x0f2000 0x4000>;
+			};
+			/* 3–4. Resource A/B — UI fonts/logos/icons (XIP mmap DATA) */
+			resource_primary_partition: partition@f6000 {
+				label = "resource-primary";
+				reg = <0x0f6000 0x80000>;
+			};
+			resource_secondary_partition: partition@176000 {
+				label = "resource-secondary";
+				reg = <0x176000 0x80000>;
+			};
+			/* 5–6. Model A/B — clinical pack (glucose wearable+pulse; future algos) */
+			model_primary_partition: partition@1f6000 {
+				label = "model-primary";
+				reg = <0x1f6000 0x80000>;
+			};
+			model_secondary_partition: partition@276000 {
+				label = "model-secondary";
+				reg = <0x276000 0x80000>;
+			};
+			/* 7. Factory calibration (read-only) */
+			calibration_partition: partition@2f6000 {
+				label = "calibration";
+				reg = <0x2f6000 0x10000>;
+				read-only;
+			};
+			/* 8. External NVS / config */
+			storage_nvs: nvs_partition: partition@306000 {
+				label = "storage_nvs";
+				reg = <0x306000 0x20000>;
+			};
+			/* 9. Measurement record store — rounded to 4 MB */
+			record_store_partition: partition@326000 {
+				label = "record_store";
+				reg = <0x326000 0x400000>;
+			};
+			/* 10. App-owned blobs (MAX32664 .msbl ~300 KB; remainder after records) */
+			app_data_partition: partition@726000 {
+				label = "app";
+				reg = <0x726000 0xda000>;
+			};
+		};
+	};
+};

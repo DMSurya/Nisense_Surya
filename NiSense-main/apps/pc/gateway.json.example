@@ -1,0 +1,9 @@
+{
+  "rest_url": "http://127.0.0.1:8080/upload",
+  "mqtt_host": "",
+  "mqtt_port": 1883,
+  "mqtt_topic_prefix": "hcm/logs",
+  "mqtt_username": "",
+  "mqtt_password": "",
+  "use_ssl": false
+}

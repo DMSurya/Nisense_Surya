@@ -1,0 +1,25 @@
+# Copyright (c) 2025 MAX20360 Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+config CHARGER_MAX20360
+	bool "MAX20360 battery charger driver"
+	default y
+	depends on DT_HAS_MAXIM_MAX20360_CHARGER_ENABLED
+	select I2C
+	help
+	  Enable the MAX20360 battery charger driver.
+
+	  Charge voltage: ChgBatReg 4.05–4.60 V / 50 mV.
+	  Fast-charge current IFCHG is set by external RISET only.
+	  Input current limit: eight ILimCntl codes (50 mA–1 A).
+
+if CHARGER_MAX20360
+
+config CHARGER_MAX20360_INIT_PRIORITY
+	int "MAX20360 charger initialization priority"
+	default 76
+	help
+	  After REGULATOR_MAX20360_COMMON_INIT_PRIORITY (74) so the PMIC
+	  I²C mutex exists before charger RMW / presence probe.
+
+endif # CHARGER_MAX20360

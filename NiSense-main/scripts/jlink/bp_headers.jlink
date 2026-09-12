@@ -1,0 +1,8 @@
+r
+SetBP 0x6352
+g
+Sleep 200
+h
+regs
+q
+

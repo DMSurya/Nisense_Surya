@@ -1,0 +1,35 @@
+// MCUboot Diagnostic Script
+// Sets a breakpoint at boot_validate_slot return to see what it returns
+// Also sets breakpoints at key validation functions
+//
+// Expected: boot_validate_slot at 0x92C, returns at 0x982
+// boot_check_image at 0x8FC, bootutil_verify_sig at 0x77C
+// bootutil_find_key at 0x5E4
+// context_boot_go comparison at 0xD98 (second validate)
+//
+// Run: JLink.exe -device nRF52840_xxAA -if SWD -speed 4000 -CommandFile diagnose_mcuboot.jlink
+
+connect
+halt
+
+// Set breakpoints
+SetBP 0x00000982  // boot_validate_slot return (all paths return here)
+SetBP 0x000005E4  // bootutil_find_key entry
+SetBP 0x00000650  // bootutil_cmp_rsasig entry
+SetBP 0x000003E8  // MCUboot infinite loop
+
+// Wait 10 seconds and read state
+Sleep 100
+g
+Sleep 10000
+
+// Read key registers
+regs
+halt
+
+// Read FIH variable values at their RAM addresses
+mem8 0x200015F8 4   // FIH_SUCCESS
+mem8 0x200004C4 4   // FIH_FAILURE  
+mem8 0x200004C0 4   // FIH_NO_BOOTABLE_IMAGE
+
+exit

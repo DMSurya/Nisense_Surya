@@ -1,0 +1,125 @@
+%%{init: {'theme': 'base'}}%%
+%% =============================================================================
+%% DEPLOYMENT DIAGRAM - Physical Hardware Mapping
+%% =============================================================================
+%% Purpose: Shows how software components map to physical hardware
+%% Scope: MCU, peripherals, buses, and external components
+%% Assumptions:
+%%   - Single PCB with all components
+%%   - I2C0 for power/RTC/touch, I2C1 for sensors
+%%   - QSPI for external flash
+%% =============================================================================
+
+graph TB
+    subgraph "Wearable Device PCB"
+        subgraph "nRF52840 Module (Raytac MDBT50Q-DB-40)"
+            subgraph "Cortex-M4F Core"
+                Firmware[📦 Firmware Image<br/>MCUboot + Application<br/>~400KB Used]
+                BLERadio[📡 BLE Radio<br/>2.4GHz<br/>SoftDevice Controller]
+            end
+            
+            subgraph "On-Chip Memory"
+                Flash[💾 Internal Flash<br/>1MB Total<br/>Partitioned]
+                RAM[🧠 RAM<br/>256KB<br/>~95% Used]
+            end
+
+            subgraph "Peripheral Interfaces"
+                I2C0_IF[I2C0<br/>P0.13 SDA<br/>P0.14 SCL]
+                I2C1_IF[I2C1<br/>P0.16 SDA<br/>P0.15 SCL]
+                SPI2_IF[SPI2<br/>P0.05 SCK<br/>P0.06 MOSI<br/>P0.07 MISO]
+                QSPI_IF[QSPI<br/>P0.17-P0.21<br/>P0.22 CS]
+                ADC_IF[ADC<br/>P0.03 AIN1<br/>P0.28 AIN4]
+                PWM_IF[PWM1<br/>P0.12 Buzzer]
+                USB_IF[USB<br/>D+/D-]
+            end
+        end
+
+        subgraph "I2C0 Bus (Power & System)"
+            PMIC[🔋 MAX20360 PMIC<br/>0x28 Main<br/>0x36 Fuel Gauge]
+            RTC[⏰ MCP7940N RTC<br/>0x6F]
+            Touch[👆 FT6336 Touch<br/>0x38]
+            TempWear[🌡️ MAX30208<br/>0x53 Wearable]
+            TempPulse[🌡️ MAX30205<br/>0x48 Pulse]
+        end
+
+        subgraph "I2C1 Bus (Sensors)"
+            SensorHub[❤️ MAX32664 Hub<br/>0x55<br/>Variants A/B/C/D]
+            AFE[💓 MAX86141 AFE<br/>via Hub Passthrough]
+            Accel[📐 LIS2DS12<br/>via Hub I2C]
+            Prox[👁️ VCNL3040<br/>0x60]
+        end
+
+        subgraph "SPI2 Bus (Display)"
+            Display[📺 ST7789V LCD<br/>240x240 16-bit<br/>P0.26 CS, P0.27 DC]
+        end
+
+        subgraph "QSPI Bus (Storage)"
+            ExtFlash[💿 MX25R64<br/>8MB NOR Flash<br/>FAT + Secondary Slot]
+        end
+
+        subgraph "Analog Frontend"
+            GlucoseAFE[🩸 INA122UA<br/>Glucose Amplifier]
+            IRLED[💡 IR LED<br/>P0.24 Drive]
+        end
+
+        subgraph "Audio/Feedback"
+            Buzzer[🔔 Buzzer<br/>PWM Driven]
+        end
+
+        subgraph "Connectivity"
+            WiFiMod[📡 WExx Wi-Fi<br/>UART AT Commands]
+        end
+
+        subgraph "Power Input"
+            Battery[🔋 LiPo Battery<br/>3.7V Nominal]
+            USBC[🔌 USB-C<br/>5V Charging]
+        end
+    end
+
+    %% Connections
+    Firmware --> I2C0_IF
+    Firmware --> I2C1_IF
+    Firmware --> SPI2_IF
+    Firmware --> QSPI_IF
+    Firmware --> ADC_IF
+    Firmware --> PWM_IF
+    Firmware --> USB_IF
+    BLERadio --> Firmware
+
+    I2C0_IF --> PMIC
+    I2C0_IF --> RTC
+    I2C0_IF --> Touch
+    I2C0_IF --> TempWear
+    I2C0_IF --> TempPulse
+
+    I2C1_IF --> SensorHub
+    I2C1_IF --> Prox
+    SensorHub --> AFE
+    SensorHub --> Accel
+
+    SPI2_IF --> Display
+    QSPI_IF --> ExtFlash
+
+    ADC_IF --> GlucoseAFE
+    GlucoseAFE --> IRLED
+
+    PWM_IF --> Buzzer
+
+    USB_IF --> USBC
+    PMIC --> Battery
+    PMIC --> USBC
+
+    %% Styling
+    classDef mcu fill:#4a90a4,stroke:#2c5f6e,stroke-width:2px,color:white
+    classDef i2c0dev fill:#81c784,stroke:#388e3c,stroke-width:2px
+    classDef i2c1dev fill:#64b5f6,stroke:#1976d2,stroke-width:2px
+    classDef spidev fill:#ffb74d,stroke:#f57c00,stroke-width:2px
+    classDef analog fill:#ce93d8,stroke:#8e24aa,stroke-width:2px
+    classDef power fill:#ef5350,stroke:#c62828,stroke-width:2px
+
+    class Firmware,BLERadio,Flash,RAM mcu
+    class PMIC,RTC,Touch,TempWear,TempPulse i2c0dev
+    class SensorHub,AFE,Accel,Prox i2c1dev
+    class Display,ExtFlash spidev
+    class GlucoseAFE,IRLED analog
+    class Battery,USBC power

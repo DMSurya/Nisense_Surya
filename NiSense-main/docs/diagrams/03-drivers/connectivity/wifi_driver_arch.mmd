@@ -1,0 +1,109 @@
+%%{init: {'theme': 'base'}}%%
+%% =============================================================================
+%% WI-FI DRIVER ARCHITECTURE
+%% =============================================================================
+%% Purpose: Shows the WExx Wi-Fi module driver architecture
+%% Scope: AT command interface, network stack integration, data upload
+%% Assumptions:
+%%   - WExx module with UART AT command interface
+%%   - AT commands working, HTTP/MQTT integration pending
+%%   - Out-of-tree driver under drivers/wifi/wexx/
+%% =============================================================================
+
+graph TB
+    subgraph "Application Layer (src/)"
+        WiFiUI[wifi_ui.c<br/>Wi-Fi Settings<br/>Status Display]
+        DataUpload[Data Upload<br/>Cloud Upload<br/>Future]
+    end
+
+    subgraph "Zephyr Network Stack"
+        NetIF[net_if<br/>Network Interface]
+        WiFiMgmt[wifi_mgmt<br/>Scan/Connect/Status]
+        NetConn[net_context<br/>TCP/UDP Sockets]
+        HTTP[HTTP Client<br/>Future]
+        MQTT[MQTT Client<br/>Future]
+    end
+
+    subgraph "WExx Driver (drivers/wifi/wexx/)"
+        WexxCore[wexx.c<br/>Driver Core<br/>Init + State Machine]
+        
+        subgraph "AT Command Layer"
+            ATParser[AT Parser<br/>Response Parsing<br/>URC Handling]
+            ATCmd[AT Commands<br/>AT+CWMODE<br/>AT+CWJAP<br/>AT+CIPSTART]
+            ATResp[Response Handler<br/>OK/ERROR<br/>+CWJAP:...]
+        end
+
+        subgraph "Network Operations"
+            Scan[WiFi Scan<br/>AT+CWLAP]
+            Connect[WiFi Connect<br/>AT+CWJAP]
+            Disconnect[WiFi Disconnect<br/>AT+CWQAP]
+            Status[Status Query<br/>AT+CWSTATE]
+        end
+
+        subgraph "Data Transfer (Pending)"
+            TCPClient[TCP Client<br/>AT+CIPSTART]
+            HTTPReq[HTTP Request<br/>AT+HTTPCLIENT]
+            MQTTPub[MQTT Publish<br/>AT+MQTTPUB]
+        end
+    end
+
+    subgraph "Hardware"
+        UART[UART0<br/>115200 baud]
+        WexxMod[WExx Module<br/>Wi-Fi SoC<br/>2.4GHz 802.11 b/g/n]
+        Antenna[PCB Antenna<br/>2.4GHz]
+    end
+
+    subgraph "External Systems"
+        AP[Wi-Fi AP<br/>Router/Hotspot]
+        Cloud[Cloud Backend<br/>HTTPS API<br/>MQTT Broker]
+    end
+
+    %% Application to network stack
+    WiFiUI --> WiFiMgmt
+    DataUpload --> HTTP
+    DataUpload --> MQTT
+
+    %% Network stack to driver
+    NetIF --> WexxCore
+    WiFiMgmt --> WexxCore
+    NetConn --> WexxCore
+    HTTP -.-> WexxCore
+    MQTT -.-> WexxCore
+
+    %% Driver internals
+    WexxCore --> ATParser
+    ATParser --> ATCmd
+    ATCmd --> ATResp
+    
+    WexxCore --> Scan
+    WexxCore --> Connect
+    WexxCore --> Disconnect
+    WexxCore --> Status
+    
+    WexxCore -.-> TCPClient
+    WexxCore -.-> HTTPReq
+    WexxCore -.-> MQTTPub
+
+    %% Hardware
+    ATCmd --> UART
+    UART --> WexxMod
+    WexxMod --> Antenna
+
+    %% External
+    Antenna --> AP
+    AP --> Cloud
+
+    %% Styling
+    classDef app fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
+    classDef netstack fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef driver fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef pending fill:#ffcdd2,stroke:#c62828,stroke-width:2px,stroke-dasharray: 5 5
+    classDef hw fill:#cfd8dc,stroke:#455a64,stroke-width:2px
+    classDef external fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+
+    class WiFiUI,DataUpload app
+    class NetIF,WiFiMgmt,NetConn netstack
+    class WexxCore,ATParser,ATCmd,ATResp,Scan,Connect,Disconnect,Status driver
+    class HTTP,MQTT,TCPClient,HTTPReq,MQTTPub pending
+    class UART,WexxMod,Antenna hw
+    class AP,Cloud external

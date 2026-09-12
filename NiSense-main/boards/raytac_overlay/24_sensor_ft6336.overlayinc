@@ -1,0 +1,11 @@
+/* Sensor group: FT6336 touch controller */
+&i2c0 {
+	ft6336_touch: ft6336@38 {
+		compatible = "focaltech,ft5336";
+		reg = <0x38>;
+		/* int-gpios = <&gpio1 5 GPIO_ACTIVE_LOW>; */
+		reset-gpios = <&gpio1 1 GPIO_ACTIVE_LOW>;
+		swapped-x-y;
+		status = "okay";
+	};
+};

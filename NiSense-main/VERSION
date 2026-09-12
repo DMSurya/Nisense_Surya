@@ -1,0 +1,9 @@
+# NiSense firmware semantic version (Zephyr APP VERSION format).
+# Drives FW_VERSION_* (git_version.h) and MCUboot imgtool --version
+# (CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION ← APP_VERSION_TWEAK_STRING).
+# Bump on commit via Cursor global rule (semver-bump-on-commit).
+VERSION_MAJOR = 2
+VERSION_MINOR = 0
+PATCHLEVEL = 0
+VERSION_TWEAK = 0
+EXTRAVERSION =

@@ -1,0 +1,3 @@
+Icons derived from Lucide (https://lucide.dev) — ISC License.
+Recoloured to the NiSense brand palette via scripts/tools/fetch_icons.py.
+Lucide is a community fork of Feather Icons (MIT).

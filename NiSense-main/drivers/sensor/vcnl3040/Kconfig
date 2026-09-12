@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2025 AARMS Value Chain
+
+config VCNL3040
+	bool "VCNL3040 Proximity Sensor"
+	default y
+	depends on DT_HAS_VISHAY_VCNL3040_ENABLED
+	select I2C
+	help
+	  Enable driver for Vishay VCNL3040 proximity sensor.
+	  
+	  This sensor provides 16-bit proximity sensing with
+	  integrated IR LED and photodiode, sunlight cancellation,
+	  and programmable thresholds.

@@ -1,0 +1,126 @@
+%%{init: {'theme': 'base'}}%%
+%% =============================================================================
+%% RECOVERY FLOWS DIAGRAM
+%% =============================================================================
+%% Purpose: Shows detailed recovery procedures for various failure scenarios
+%% Scope: I2C recovery, sensor recovery, storage recovery, system recovery
+%% Assumptions:
+%%   - Multiple levels of recovery escalation
+%%   - Some failures require hardware reset
+%%   - User notification for persistent failures
+%% =============================================================================
+
+graph TB
+    subgraph "I2C Bus Recovery"
+        I2C_FAIL[I2C Failure Detected]
+        I2C_RETRY[Retry Transaction<br/>↓ 3 attempts]
+        I2C_CLK_TOGGLE[Clock Toggle<br/>9 CLK pulses<br/>Release stuck slave]
+        I2C_BUS_RESET[Bus Reset<br/>Reinit I2C controller]
+        I2C_POWER_CYCLE[Power Cycle<br/>Toggle device power<br/>via GPIO/PMIC]
+        I2C_DEGRADED[Degraded Mode<br/>Device offline<br/>Skip in polling]
+
+        I2C_FAIL --> I2C_RETRY
+        I2C_RETRY -->|Success| I2C_OK[Resume Normal]
+        I2C_RETRY -->|Fail 3x| I2C_CLK_TOGGLE
+        I2C_CLK_TOGGLE --> I2C_RETRY
+        I2C_CLK_TOGGLE -->|Still stuck| I2C_BUS_RESET
+        I2C_BUS_RESET --> I2C_RETRY
+        I2C_BUS_RESET -->|Fail| I2C_POWER_CYCLE
+        I2C_POWER_CYCLE --> I2C_RETRY
+        I2C_POWER_CYCLE -->|Fail| I2C_DEGRADED
+    end
+
+    subgraph "MAX32664 Recovery"
+        HUB_FAIL[Sensor Hub Failure]
+        HUB_SOFT_RESET[Soft Reset<br/>Reset command via I2C]
+        HUB_REDETECT[Re-detect Variant<br/>Run detection chain]
+        HUB_HARD_RESET[Hard Reset<br/>Toggle RST GPIO<br/>10ms pulse]
+        HUB_REINIT[Reinitialize<br/>Full driver init]
+        HUB_MODE_FALLBACK[Mode Fallback<br/>Try different mode]
+        HUB_OFFLINE[Hub Offline<br/>PPG unavailable]
+
+        HUB_FAIL --> HUB_SOFT_RESET
+        HUB_SOFT_RESET -->|Success| HUB_OK[Resume Normal]
+        HUB_SOFT_RESET -->|Fail| HUB_HARD_RESET
+        HUB_HARD_RESET --> HUB_REDETECT
+        HUB_REDETECT -->|Success| HUB_REINIT
+        HUB_REDETECT -->|Fail| HUB_MODE_FALLBACK
+        HUB_REINIT -->|Success| HUB_OK
+        HUB_REINIT -->|Fail| HUB_MODE_FALLBACK
+        HUB_MODE_FALLBACK -->|Success| HUB_OK
+        HUB_MODE_FALLBACK -->|Fail| HUB_OFFLINE
+    end
+
+    subgraph "Storage Recovery"
+        FS_FAIL[Filesystem Failure]
+        FS_REMOUNT[Remount<br/>Close handles<br/>Remount volume]
+        FS_FSCK[Filesystem Check<br/>Repair FAT tables]
+        FS_REFORMAT[Reformat<br/>mkfs.fat<br/>Lose data]
+        FS_FALLBACK[RAM-only Mode<br/>No persistence<br/>BLE upload only]
+
+        FS_FAIL --> FS_REMOUNT
+        FS_REMOUNT -->|Success| FS_OK[Resume Normal]
+        FS_REMOUNT -->|Fail| FS_FSCK
+        FS_FSCK -->|Success| FS_OK
+        FS_FSCK -->|Fail| FS_REFORMAT
+        FS_REFORMAT -->|Success| FS_OK
+        FS_REFORMAT -->|Fail| FS_FALLBACK
+    end
+
+    subgraph "BLE Recovery"
+        BLE_FAIL[BLE Failure]
+        BLE_RECONNECT[Reconnect<br/>Attempt reconnection]
+        BLE_RESTART_ADV[Restart Advertising<br/>bt_le_adv_start]
+        BLE_STACK_RESET[Stack Reset<br/>bt_disable/enable]
+        BLE_OFFLINE[BLE Offline<br/>Wi-Fi/USB only]
+
+        BLE_FAIL --> BLE_RECONNECT
+        BLE_RECONNECT -->|Success| BLE_OK[Resume Normal]
+        BLE_RECONNECT -->|Fail 3x| BLE_RESTART_ADV
+        BLE_RESTART_ADV -->|Success| BLE_OK
+        BLE_RESTART_ADV -->|Fail| BLE_STACK_RESET
+        BLE_STACK_RESET -->|Success| BLE_OK
+        BLE_STACK_RESET -->|Fail| BLE_OFFLINE
+    end
+
+    subgraph "System Recovery"
+        SYS_FAIL[System Failure<br/>Watchdog/HardFault]
+        SYS_LOG[Log Fault Info<br/>Registers, Stack<br/>Reason code]
+        SYS_SAVE[Save State<br/>Pending data → NVS<br/>Current config]
+        SYS_CONTROLLED[Controlled Reboot<br/>sys_reboot COLD]
+        SYS_BOOT[MCUboot<br/>Validate image]
+        SYS_RESTORE[Restore State<br/>Load from NVS<br/>Resume operation]
+
+        SYS_FAIL --> SYS_LOG
+        SYS_LOG --> SYS_SAVE
+        SYS_SAVE --> SYS_CONTROLLED
+        SYS_CONTROLLED --> SYS_BOOT
+        SYS_BOOT -->|Image OK| SYS_RESTORE
+        SYS_BOOT -->|Image Bad| SYS_SWAP[Try Secondary Slot]
+        SYS_RESTORE --> SYS_OK[Resume Normal]
+        SYS_SWAP -->|Success| SYS_RESTORE
+        SYS_SWAP -->|Fail| SYS_BRICK[Recovery Mode<br/>USB/JTAG only]
+    end
+
+    subgraph "PMIC Recovery"
+        PMIC_FAIL[PMIC Failure<br/>Regulator fault]
+        PMIC_RECONFIG[Reconfigure<br/>Re-send settings]
+        PMIC_UNLOCK[Re-unlock<br/>Write protection]
+        PMIC_SHUTDOWN[Graceful Shutdown<br/>Save state first]
+
+        PMIC_FAIL --> PMIC_UNLOCK
+        PMIC_UNLOCK --> PMIC_RECONFIG
+        PMIC_RECONFIG -->|Success| PMIC_OK[Resume Normal]
+        PMIC_RECONFIG -->|Fail| PMIC_SHUTDOWN
+    end
+
+    %% Styling
+    classDef fail fill:#ffcdd2,stroke:#c62828,stroke-width:2px
+    classDef action fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef success fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
+    classDef degraded fill:#e1bee7,stroke:#8e24aa,stroke-width:2px
+
+    class I2C_FAIL,HUB_FAIL,FS_FAIL,BLE_FAIL,SYS_FAIL,PMIC_FAIL fail
+    class I2C_RETRY,I2C_CLK_TOGGLE,I2C_BUS_RESET,I2C_POWER_CYCLE,HUB_SOFT_RESET,HUB_HARD_RESET,HUB_REDETECT,HUB_REINIT,HUB_MODE_FALLBACK,FS_REMOUNT,FS_FSCK,FS_REFORMAT,BLE_RECONNECT,BLE_RESTART_ADV,BLE_STACK_RESET,SYS_LOG,SYS_SAVE,SYS_CONTROLLED,SYS_BOOT,SYS_RESTORE,SYS_SWAP,PMIC_UNLOCK,PMIC_RECONFIG action
+    class I2C_OK,HUB_OK,FS_OK,BLE_OK,SYS_OK,PMIC_OK success
+    class I2C_DEGRADED,HUB_OFFLINE,FS_FALLBACK,BLE_OFFLINE,SYS_BRICK,PMIC_SHUTDOWN degraded

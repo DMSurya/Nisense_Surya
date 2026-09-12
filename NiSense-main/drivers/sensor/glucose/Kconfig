@@ -1,0 +1,222 @@
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig GLUCOSE_SENSOR
+	bool "Glucose sensor driver"
+	depends on ADC && GPIO
+	help
+	  Enable driver for non-invasive glucose measurement sensor using
+	  optical sensing (near-infrared spectroscopy).
+
+	  The driver controls an infrared LED (1550nm) via GPIO and reads
+	  glucose signal from a photodiode-amplifier chain via ADC. It
+	  implements calibration, filtering, and signal processing algorithms
+	  to convert raw ADC readings into glucose concentration values.
+
+if GLUCOSE_SENSOR
+
+config GLUCOSE_SAMPLING_INTERVAL_MINUTES
+	int "Application periodic glucose sampling interval (minutes)"
+	default 10
+	range 1 1440
+	help
+	  Used by src/sensors/glucose.c for the optional periodic measurement timer.
+
+module = GLUCOSE_ALGORITHM
+module-str = Glucose algorithm
+source "subsys/logging/Kconfig.template.log_config"
+
+config GLUCOSE_SENSOR_WORKQ_STACK_SIZE
+	int "Glucose dedicated workqueue stack size (bytes)"
+	default 4096
+	range 2048 16384
+	help
+	  Stack for the dedicated glucose sensor workqueue (runs both the
+	  ADC sampling work item and the elimination-matrix algorithm).
+	  Historical value was 6144 B. With matrices loaded from file at
+	  runtime the algorithm pass fits comfortably in ~3 KB; 4096 B
+	  keeps a 25% margin. Raise if embedding the full matrices
+	  (GLUCOSE_SENSOR_MATRICES_FROM_FILE=n).
+
+config GLUCOSE_SENSOR_INIT_PRIORITY
+	int "Glucose sensor initialization priority"
+	default 80
+	range 0 99
+	help
+	  Initialization priority for glucose sensor driver. Lower values
+	  indicate higher priority. Must be lower than application priority
+	  to ensure driver is ready when application code runs.
+
+config GLUCOSE_SENSOR_DEFAULT_SAMPLES
+	int "Default number of ADC samples per measurement"
+	default 80
+	range 10 500
+	help
+	  Default number of ADC samples to capture during each measurement
+	  cycle. Higher values improve signal-to-noise ratio but increase
+	  measurement time. Can be overridden per-instance via device tree.
+
+config GLUCOSE_SENSOR_DEFAULT_DELAY_MS
+	int "Default LED stabilization delay (milliseconds)"
+	default 2000
+	range 100 10000
+	help
+	  Default delay in milliseconds to wait after activating IR LED
+	  before starting ADC sampling. This allows LED output and tissue
+	  response to stabilize. Can be overridden per-instance via device tree.
+
+config GLUCOSE_SENSOR_DEFAULT_SAMPLE_RATE_HZ
+	int "Default ADC sampling rate (Hz)"
+	default 100
+	range 10 1000
+	help
+	  Default ADC sampling rate in Hz (samples per second). Used to
+	  calculate inter-sample delay timing. Higher rates allow faster
+	  measurements but may increase noise. Can be overridden per-instance
+	  via device tree.
+
+config GLUCOSE_SENSOR_ENABLE_FILTERING
+	bool "Enable digital filtering algorithms"
+	default y
+	help
+	  Enable digital filtering (moving average, median filter) to reduce
+	  noise and improve signal quality. Filtering adds computational
+	  overhead but significantly improves measurement accuracy.
+
+	  If disabled, only raw ADC samples are processed without filtering.
+
+config GLUCOSE_SENSOR_FILTER_WINDOW_SIZE
+	int "Moving average filter window size"
+	default 5
+	depends on GLUCOSE_SENSOR_ENABLE_FILTERING
+	range 3 20
+	help
+	  Window size for moving average filter. Larger windows provide
+	  better noise reduction but slower response to actual changes.
+	  Typical values: 5-10 samples.
+
+config GLUCOSE_SENSOR_MEDIAN_FILTER_ENABLE
+	bool "Enable median filter for outlier rejection"
+	default y
+	depends on GLUCOSE_SENSOR_ENABLE_FILTERING
+	help
+	  Enable median filter to remove impulse noise and outliers from
+	  ADC samples. Median filtering is applied before moving average
+	  filtering.
+
+config GLUCOSE_SENSOR_SIGNAL_QUALITY_METRICS
+	bool "Calculate and report signal quality metrics"
+	default y
+	help
+	  Calculate signal quality metrics (SNR, variance, peak-to-peak)
+	  along with glucose readings. These metrics help assess measurement
+	  reliability and detect poor sensor contact or ambient light issues.
+
+config GLUCOSE_SENSOR_POWER_MANAGEMENT
+	bool "Enable power management support"
+	default y
+	depends on PM
+	help
+	  Enable power management hooks for sleep/wake transitions.
+	  Driver will disable LED and ADC during sleep to minimize power
+	  consumption and re-initialize on wake.
+
+config GLUCOSE_SENSOR_AUTO_CALIBRATE
+	bool "Automatically perform dark current calibration at startup"
+	default n
+	help
+	  When enabled, automatically performs dark current calibration during
+	  glucose sensor initialization. This takes approximately 5 seconds
+	  (10 ADC samples with 500ms delays) but ensures accurate baseline
+	  offset measurement. The measured offset is then applied to all
+	  subsequent glucose measurements to compensate for DC bias.
+	  
+	  When disabled, uses the calibration offset value from device tree
+	  (calibration-offset-mv property). If device tree value is 0 or
+	  calibration is stored in NVS, manual calibration should be performed
+	  before first measurement for accurate results.
+	  
+	  Note: The offset compensation (subtraction) is always applied during
+	  measurement processing if an offset value exists (from calibration or
+	  device tree). This config only controls whether calibration is
+	  performed automatically at startup.
+	  
+	  Disable this to reduce boot time if you have a known calibration
+	  value or perform calibration manually via UI/API.
+
+# Matrices always come from the packed XIP NOR model (FatFS/embedded removed).
+# Keep this as a plain default-y bool with no depends/choice — those patterns
+# recurse on GLUCOSE_SENSOR under NCS/Zephyr Kconfig.
+config GLUCOSE_MATRICES_FROM_XIP
+	bool
+	default y
+	help
+	  Packed float32 matrices on the glucose-model QSPI partition
+	  (include/glucose_model_xip.h). Pack with
+	  scripts/tools/pack_glucose_model.py; flash with
+	  scripts/flash/flash_glucose_model.ps1.
+
+config GLUCOSE_MODEL_SIGNED
+	bool "Require Ed25519 signature to commit a BLE glucose-model update"
+	default n
+	help
+	  When enabled, the BLE model-transfer service verifies an Ed25519
+	  signature over the received model before flipping the A/B slot.
+	  Public key: include/glucose_model_pubkey.h. Enable MBEDTLS/PSA in
+	  the board/app conf when using this option (do not select from here —
+	  select MBEDTLS caused Kconfig recursion with GLUCOSE_SENSOR).
+
+config GLUCOSE_ALGORITHM_INTERCEPT_CONSTANT
+	int "Algorithm intercept constant (milli-units; divide by 1000 for double)"
+	default 161832
+	help
+	  Watch intercept term scaled by 1000 (legacy tuned ~161.832).
+
+config GLUCOSE_ALGORITHM_OUTLIER_K_FACTOR
+	int "Outlier K-factor (milli-units; divide by 1000)"
+	default 1750
+
+choice GLUCOSE_HW_VARIANT_FORCE
+	prompt "Force glucose hardware profile (runtime detection when AUTO)"
+	default GLUCOSE_HW_VARIANT_AUTO
+
+config GLUCOSE_HW_VARIANT_AUTO
+	bool "Auto-detect (MAX32664C = wearable, else pulse)"
+
+config GLUCOSE_HW_VARIANT_FORCE_WEARABLE
+	bool "Force wearable profile"
+
+config GLUCOSE_HW_VARIANT_FORCE_PULSE
+	bool "Force pulse profile"
+
+endchoice
+
+config GLUCOSE_NORMALIZATION_DIVISOR
+	int "Glucose normalization divisor (mmol/L scale)"
+	default 18
+
+config HOMA_IR_DIVISOR
+	int "HOMA-IR divisor (Matthews et al. standard)"
+	default 405
+
+config INSULIN_CALIBRATION_ADJUSTMENT_PERCENT
+	int "Insulin calibration factor (per-mille; 1050 => 1.05)"
+	default 1050
+
+config DEFAULT_FASTING_INSULIN_UIU_ML
+	int "Default fasting insulin (centi uIU/mL; 1000 => 10.0)"
+	default 1000
+
+config HOMA_IR_INTERPRETATION_THRESHOLD_OPTIMAL
+	int "HOMA-IR optimal upper threshold (milli)"
+	default 1000
+
+config HOMA_IR_INTERPRETATION_THRESHOLD_NORMAL
+	int "HOMA-IR normal upper threshold (milli)"
+	default 2000
+
+config HOMA_IR_INTERPRETATION_THRESHOLD_MODERATE
+	int "HOMA-IR moderate IR upper threshold (milli)"
+	default 3000
+
+endif # GLUCOSE_SENSOR
+

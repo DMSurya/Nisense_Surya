@@ -1,0 +1,16 @@
+# Copy to local.properties (gitignored) and adjust paths for your machine.
+#
+#   cd apps/mobile/android
+#   copy local.properties.example local.properties
+#
+# Or run `flutter pub get` / `flutter build apk` from apps/mobile — Flutter
+# usually writes flutter.sdk and sdk.dir automatically on first Gradle sync.
+
+# Flutter SDK root (directory that contains bin/flutter.bat)
+flutter.sdk=C:\\flutter
+
+# Android SDK root (directory that contains platform-tools/adb.exe)
+sdk.dir=C:\\Users\\you\\AppData\\Local\\Android\\Sdk
+
+# Optional — only if Gradle does not pick up JDK 17 from Android Studio / JAVA_HOME
+# org.gradle.java.home=C:\\Program Files\\Eclipse Adoptium\\jdk-17.0.x-hotspot

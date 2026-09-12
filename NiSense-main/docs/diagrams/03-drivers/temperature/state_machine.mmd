@@ -1,0 +1,68 @@
+%%{init: {'theme': 'base'}}%%
+%% =============================================================================
+%% TEMPERATURE DRIVER STATE MACHINE
+%% =============================================================================
+%% Purpose: Shows temperature sensor operational states
+%% Scope: Init, measurement modes, power states
+%% Assumptions:
+%%   - MAX30205: Simple polling, one-shot or continuous
+%%   - MAX30208: FIFO-based with interrupt support
+%% =============================================================================
+
+stateDiagram-v2
+    [*] --> UNINITIALIZED: Power On
+
+    state "Initialization" as INIT {
+        UNINITIALIZED --> PROBE: driver_init()
+        PROBE --> READ_ID: I2C Probe OK
+        READ_ID --> CONFIGURE: ID Valid
+        CONFIGURE --> READY: Config Complete
+        
+        PROBE --> ERROR: I2C Failed
+        READ_ID --> ERROR: Invalid ID
+    }
+
+    state "MAX30205 States" as MAX30205 {
+        state "Operational" as M5_OP {
+            M5_SHUTDOWN --> M5_ONESHOT: Trigger One-Shot
+            M5_ONESHOT --> M5_CONVERTING: Start Conversion
+            M5_CONVERTING --> M5_READY: ~50ms Timeout
+            M5_READY --> M5_SHUTDOWN: Read Complete
+            
+            M5_SHUTDOWN --> M5_CONTINUOUS: Enable Continuous
+            M5_CONTINUOUS --> M5_SHUTDOWN: Disable
+        }
+        
+        state "Alarm" as M5_ALARM {
+            M5_NORMAL --> M5_OVER_TEMP: Temp > TOS
+            M5_OVER_TEMP --> M5_NORMAL: Temp < THYST
+        }
+    }
+
+    state "MAX30208 States" as MAX30208 {
+        state "Operational" as M8_OP {
+            M8_STANDBY --> M8_ACTIVE: fifo_enable()
+            M8_ACTIVE --> M8_SAMPLING: Start Conversion
+            M8_SAMPLING --> M8_FIFO_FILL: Sample Ready
+            M8_FIFO_FILL --> M8_SAMPLING: FIFO Not Full
+            M8_FIFO_FILL --> M8_IRQ: Watermark Reached
+            M8_IRQ --> M8_READ_FIFO: Interrupt Handler
+            M8_READ_FIFO --> M8_SAMPLING: FIFO Drained
+            M8_ACTIVE --> M8_STANDBY: fifo_disable()
+        }
+        
+        state "Power" as M8_PWR {
+            M8_ACTIVE --> M8_SLEEP: power_down()
+            M8_SLEEP --> M8_ACTIVE: power_up()
+        }
+    }
+
+    READY --> MAX30205: temp-pulse alias
+    READY --> MAX30208: temp-wearable alias
+
+    state "Error Recovery" as ERR {
+        ERROR --> RETRY: retry_count < 3
+        RETRY --> PROBE: Wait 100ms
+        ERROR --> FAILED: retry_count >= 3
+        FAILED --> [*]: Device Offline
+    }

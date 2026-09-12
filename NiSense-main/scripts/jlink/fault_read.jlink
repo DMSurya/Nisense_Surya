@@ -1,0 +1,87 @@
+// J-Link Commander script to read ARM Cortex-M4 fault registers
+// Run with: JLink.exe -device nRF52840_xxAA -if swd -speed 4000 -CommandFile fault_read.jlink
+
+connect
+halt
+sleep 100
+
+// Print header
+exec printf "\n============================================\n"
+exec printf "  ARM Cortex-M4 Fault Register Dump\n"
+exec printf "============================================\n\n"
+
+// Read System Control Block (SCB) registers
+exec printf "=== System Control Block ===\n"
+
+// VTOR - Vector Table Offset Register (0xE000ED08)
+mem32 0xE000ED08 1
+exec printf "VTOR (0xE000ED08): 0x%08X\n\n"
+
+// ICSR - Interrupt Control and State Register (0xE000ED04)
+mem32 0xE000ED04 1
+
+// AIRCR - Application Interrupt and Reset Control Register (0xE000ED0C)
+mem32 0xE000ED0C 1
+
+exec printf "\n=== Fault Status Registers ===\n"
+
+// CFSR - Configurable Fault Status Register (0xE000ED28)
+// Contains MMFSR [7:0], BFSR [15:8], UFSR [31:16]
+mem32 0xE000ED28 1
+
+// HFSR - Hard Fault Status Register (0xE000ED2C)
+mem32 0xE000ED2C 1
+
+// DFSR - Debug Fault Status Register (0xE000ED30)
+mem32 0xE000ED30 1
+
+// AFSR - Auxiliary Fault Status Register (0xE000ED3C)
+mem32 0xE000ED3C 1
+
+exec printf "\n=== Fault Address Registers ===\n"
+
+// MMFAR - MemManage Fault Address Register (0xE000ED34)
+mem32 0xE000ED34 1
+
+// BFAR - BusFault Address Register (0xE000ED38)
+mem32 0xE000ED38 1
+
+exec printf "\n=== Stack Pointers ===\n"
+
+// Read MSP and PSP
+mem32 0xE000ED08 1
+
+exec printf "\n=== Current Registers ===\n"
+regs
+
+exec printf "\n=== Memory at PC area (0x5EC0-0x5F00) ===\n"
+mem32 0x5EC0 16
+
+exec printf "\n=== Stack Memory (first 32 words from SP) ===\n"
+// This will show the exception frame if we're in a fault handler
+// Note: actual SP value needs to be read first
+
+exec printf "\n============================================\n"
+exec printf "  CFSR Bit Decode:\n"
+exec printf "============================================\n"
+exec printf "CFSR bits [7:0]   = MMFSR (MemManage Fault)\n"
+exec printf "CFSR bits [15:8]  = BFSR (BusFault)\n"
+exec printf "CFSR bits [31:16] = UFSR (UsageFault)\n"
+exec printf "\n"
+exec printf "BFSR Bits:\n"
+exec printf "  [0] IBUSERR  - Instruction bus error\n"
+exec printf "  [1] PRECISERR - Precise data bus error\n"
+exec printf "  [2] IMPRECISERR - Imprecise data bus error\n"
+exec printf "  [3] UNSTKERR - Unstacking error\n"
+exec printf "  [4] STKERR   - Stacking error\n"
+exec printf "  [5] LSPERR   - Lazy state preservation error\n"
+exec printf "  [7] BFARVALID - BFAR has valid contents\n"
+exec printf "\n"
+exec printf "HFSR Bits:\n"
+exec printf "  [1] VECTTBL  - Vector table read fault\n"
+exec printf "  [30] FORCED  - Forced hard fault (escalated)\n"
+exec printf "  [31] DEBUGEVT - Debug event\n"
+exec printf "============================================\n"
+
+exit
+

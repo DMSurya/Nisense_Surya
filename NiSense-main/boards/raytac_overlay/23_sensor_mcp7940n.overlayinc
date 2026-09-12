@@ -1,0 +1,10 @@
+/* Sensor group: MCP7940N RTC */
+&i2c0 {
+	mcp7940n: mcp7940n@6f {
+		compatible = "microchip,mcp79xx";
+		reg = <0x6f>;
+		variant = "mcp7940n";
+		status = "okay";
+		int-gpios = <&gpio1 3 GPIO_ACTIVE_LOW>;
+	};
+};

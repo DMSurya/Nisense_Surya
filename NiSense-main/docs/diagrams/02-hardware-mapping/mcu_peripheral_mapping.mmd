@@ -1,0 +1,132 @@
+%%{init: {'theme': 'base'}}%%
+%% =============================================================================
+%% MCU PERIPHERAL MAPPING - GPIO and Bus Assignments
+%% =============================================================================
+%% Purpose: Detailed pin-level mapping of nRF52840 to peripherals
+%% Scope: All GPIO assignments, bus configurations, interrupt lines
+%% Assumptions:
+%%   - Based on raytac_mdbt50q_db_40_nrf52840.overlay
+%%   - Some pins are multi-function (documented in comments)
+%% =============================================================================
+
+graph LR
+    subgraph "nRF52840 GPIO Port 0"
+        P0_03[P0.03<br/>AIN1<br/>Glucose ADC]
+        P0_04[P0.04<br/>GPIO<br/>LCD Backlight]
+        P0_05[P0.05<br/>SPI2 SCK<br/>Display]
+        P0_06[P0.06<br/>SPI2 MOSI<br/>Display]
+        P0_07[P0.07<br/>SPI2 MISO<br/>Display]
+        P0_12[P0.12<br/>PWM1 CH0<br/>Buzzer]
+        P0_13[P0.13<br/>I2C0 SDA<br/>PMIC/RTC]
+        P0_14[P0.14<br/>I2C0 SCL<br/>PMIC/RTC]
+        P0_15[P0.15<br/>I2C1 SCL<br/>Sensors]
+        P0_16[P0.16<br/>I2C1 SDA<br/>Sensors]
+        P0_17[P0.17<br/>QSPI CLK<br/>Flash]
+        P0_19[P0.19<br/>QSPI DIO0<br/>Flash]
+        P0_20[P0.20<br/>QSPI DIO1<br/>Flash]
+        P0_21[P0.21<br/>QSPI DIO2<br/>Flash]
+        P0_22[P0.22<br/>QSPI CS<br/>Flash]
+        P0_23[P0.23<br/>QSPI DIO3<br/>Flash]
+        P0_24[P0.24<br/>GPIO<br/>Glucose IR LED]
+        P0_26[P0.26<br/>GPIO<br/>Display CS]
+        P0_27[P0.27<br/>GPIO<br/>Display DC]
+        P0_28[P0.28<br/>AIN4<br/>Glucose ADC Alt]
+        P0_29[P0.29<br/>GPIO<br/>SW1 Button]
+    end
+
+    subgraph "nRF52840 GPIO Port 1"
+        P1_04[P1.04<br/>GPIO<br/>SW2/PFN1]
+        P1_06[P1.06<br/>GPIO<br/>MAX32664 MFIO]
+        P1_07[P1.07<br/>GPIO<br/>MAX32664 RST]
+        P1_08[P1.08<br/>GPIO<br/>Touch INT]
+        P1_09[P1.09<br/>GPIO<br/>Touch RST]
+    end
+
+    subgraph "Peripheral Mapping"
+        subgraph "I2C0 Bus @ 400kHz"
+            I2C0[I2C0 Controller]
+            I2C0_PMIC[MAX20360<br/>0x28, 0x36]
+            I2C0_RTC[MCP7940N<br/>0x6F]
+            I2C0_TOUCH[FT6336<br/>0x38]
+            I2C0_TEMP1[MAX30208<br/>0x53]
+            I2C0_TEMP2[MAX30205<br/>0x48]
+        end
+
+        subgraph "I2C1 Bus @ 400kHz"
+            I2C1[I2C1 Controller<br/>concat-buf: 8320]
+            I2C1_HUB[MAX32664<br/>0x55]
+            I2C1_PROX[VCNL3040<br/>0x60]
+        end
+
+        subgraph "SPI2 Bus @ 8MHz"
+            SPI2[SPI2 Controller]
+            SPI2_LCD[ST7789V<br/>240x240]
+        end
+
+        subgraph "QSPI @ 32MHz"
+            QSPI[QSPI Controller]
+            QSPI_FLASH[MX25R64<br/>8MB]
+        end
+
+        subgraph "ADC"
+            ADC0[ADC Controller<br/>12-bit]
+            ADC_GLUCOSE[Glucose Sensor<br/>INA122UA]
+        end
+
+        subgraph "PWM"
+            PWM1[PWM1 Controller]
+            PWM_BUZZER[Buzzer<br/>1kHz Default]
+        end
+    end
+
+    %% GPIO to Controller mappings
+    P0_13 --> I2C0
+    P0_14 --> I2C0
+    P0_15 --> I2C1
+    P0_16 --> I2C1
+    P0_05 --> SPI2
+    P0_06 --> SPI2
+    P0_07 --> SPI2
+    P0_17 --> QSPI
+    P0_19 --> QSPI
+    P0_20 --> QSPI
+    P0_21 --> QSPI
+    P0_22 --> QSPI
+    P0_23 --> QSPI
+    P0_03 --> ADC0
+    P0_28 --> ADC0
+    P0_12 --> PWM1
+
+    %% Controller to Device mappings
+    I2C0 --> I2C0_PMIC
+    I2C0 --> I2C0_RTC
+    I2C0 --> I2C0_TOUCH
+    I2C0 --> I2C0_TEMP1
+    I2C0 --> I2C0_TEMP2
+
+    I2C1 --> I2C1_HUB
+    I2C1 --> I2C1_PROX
+
+    SPI2 --> SPI2_LCD
+    QSPI --> QSPI_FLASH
+    ADC0 --> ADC_GLUCOSE
+    PWM1 --> PWM_BUZZER
+
+    %% Special control pins
+    P0_26 -.->|CS| SPI2_LCD
+    P0_27 -.->|DC| SPI2_LCD
+    P0_04 -.->|EN| SPI2_LCD
+    P1_06 -.->|MFIO| I2C1_HUB
+    P1_07 -.->|RST| I2C1_HUB
+    P1_08 -.->|INT| I2C0_TOUCH
+    P1_09 -.->|RST| I2C0_TOUCH
+    P0_24 -.->|Drive| ADC_GLUCOSE
+
+    %% Styling
+    classDef gpio fill:#e3f2fd,stroke:#1565c0,stroke-width:1px
+    classDef controller fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef device fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+
+    class P0_03,P0_04,P0_05,P0_06,P0_07,P0_12,P0_13,P0_14,P0_15,P0_16,P0_17,P0_19,P0_20,P0_21,P0_22,P0_23,P0_24,P0_26,P0_27,P0_28,P0_29,P1_04,P1_06,P1_07,P1_08,P1_09 gpio
+    class I2C0,I2C1,SPI2,QSPI,ADC0,PWM1 controller
+    class I2C0_PMIC,I2C0_RTC,I2C0_TOUCH,I2C0_TEMP1,I2C0_TEMP2,I2C1_HUB,I2C1_PROX,SPI2_LCD,QSPI_FLASH,ADC_GLUCOSE,PWM_BUZZER device

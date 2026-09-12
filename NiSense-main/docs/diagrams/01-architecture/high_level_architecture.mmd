@@ -1,0 +1,69 @@
+%%{init: {'theme': 'base'}}%%
+%% High-level architecture — record_store era — 2026-07-21
+
+graph TB
+    subgraph Application
+        UI[UI_carousel]
+        AppLogic[main_glucose_ppg]
+        HealthSched[health_sched]
+        ConfigMgr[config_manager]
+        Loggers[ppg_glucose_temp_loggers]
+        RecStore[record_store]
+        DiagShell[diag_shell_CDC]
+        BleSync[ble_record_sync]
+    end
+
+    subgraph Integration
+        PowerMgr[power_mgr]
+        RTCMgr[rtc]
+        BLEGatt[ble_gatt]
+        HwDetect[glucose_hw_detect]
+        Calib[calibration_XIP]
+    end
+
+    subgraph Zephyr
+        Kernel[kernel]
+        Logging[RTT_logging]
+        BLEStack[BLE_stack]
+        USBD[USB_CDC]
+        DeviceTree[DT_Kconfig]
+    end
+
+    subgraph Drivers
+        MAX32664Drv[MAX32664]
+        PPGAlgo[ppg_algo]
+        GlucoseDrv[glucose_sensor]
+        TempDrv[MAX302xx]
+        PMICDrv[MAX20360]
+        WiFiDrv[WExx]
+    end
+
+    subgraph Hardware
+        MCU[nRF52840]
+        I2C0[I2C0]
+        I2C1[I2C1]
+        QSPI[QSPI_MX25R64]
+    end
+
+    UI --> AppLogic
+    AppLogic --> HealthSched
+    AppLogic --> PowerMgr
+    AppLogic --> BLEGatt
+    AppLogic --> HwDetect
+    AppLogic --> Calib
+    HealthSched --> Loggers
+    Loggers --> RecStore
+    RecStore --> BleSync
+    RecStore --> DiagShell
+    DiagShell --> USBD
+    BleSync --> BLEGatt
+    ConfigMgr --> PowerMgr
+    PowerMgr --> PMICDrv
+    BLEGatt --> BLEStack
+    Calib --> QSPI
+    RecStore --> QSPI
+    MAX32664Drv --> I2C1
+    PMICDrv --> I2C0
+    TempDrv --> I2C0
+    PPGAlgo --> MAX32664Drv
+    GlucoseDrv --> MCU

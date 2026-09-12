@@ -1,0 +1,856 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# NiSense application Kconfig root.
+# Application symbols must be defined *before* sourcing Zephyr so prj.conf can set them.
+
+menu "NiSense — UI screens"
+
+config UI_SCREEN_DEVICE_INFO
+	bool
+	default y
+	depends on APP_FEATURE_DISPLAY
+	help
+	  Home screen (carousel index 0). Always compiled when display is
+	  enabled — shows health summary tiles and next-scan status.
+	  Not user-toggleable.
+
+config UI_SCREEN_HOME_INFO
+	bool "Home info / device identity screen"
+	default n
+	depends on UI_SCREEN_DEVICE_INFO
+	help
+	  Device identity screen (FW hash, device ID, uptime, storage).
+	  Off by default — use CDC shell `nisense info` and BLE f01a instead.
+	  Enable for bring-up / diagnostic builds.
+
+config UI_SCREEN_POWER
+	bool "Power summary screen"
+	default n
+	depends on APP_FEATURE_DISPLAY
+	help
+	  Battery / fuel-gauge diagnostic screen. Off by default — use
+	  `nisense power` and BLE f101/f109 instead.
+
+config UI_SCREEN_MEASURE
+	bool "Measure (unified manual cycle) screen"
+	default y
+	depends on APP_FEATURE_DISPLAY && APP_HEALTH_SCHED
+	help
+	  One-button screen that runs the full temp + HR/SpO2/Hb + glucose cycle
+	  (including the finger spot-check) via the health scheduler, with live
+	  per-step progress.
+
+config UI_SCREEN_REGULATOR
+	bool "Regulator detail screen"
+	default n
+	depends on APP_FEATURE_DISPLAY
+
+config UI_SCREEN_CHARGER
+	bool "Charger screen"
+	default n
+	depends on APP_FEATURE_DISPLAY
+	help
+	  PMIC & charger diagnostic screen. Off by default — use `nisense power`
+	  and BLE f109 instead.
+
+config UI_SCREEN_RTC
+	bool "RTC screen"
+	default n
+	depends on APP_FEATURE_DISPLAY
+
+config APP_RTC_PERIODIC_ALARM
+	bool "Experimental MCP79xx 1-minute hardware alarm (bring-up only)"
+	default n
+	depends on RTC_ALARM
+	help
+	  Arms Alarm0 at rtc_init for a 1-minute periodic IRQ. Default off —
+	  no product feature depends on it. IRQ→callback dispatch and silicon
+	  errata #2 (spurious match under trim) are not complete; do not enable
+	  in release builds. See drivers/counter/README.md Track B.
+
+config UI_SCREEN_GLUCOSE
+	bool "Metabolic screen (BL-GLU / INS-RES / BL-HEM / HOMA-IR)"
+	depends on APP_FEATURE_DISPLAY && APP_FEATURE_GLUCOSE
+	default n
+
+config UI_SCREEN_VITALS
+	bool "Vital screen (HR + SpO2 + Resp + Body Temp)"
+	depends on APP_FEATURE_DISPLAY && APP_FEATURE_PPG
+	default n
+
+config UI_SCREEN_VASCULAR
+	bool "Vascular screen (SDNN + RMSSD + BP estimate)"
+	depends on APP_FEATURE_DISPLAY && APP_FEATURE_PPG
+	default n
+
+config UI_SCREEN_PPG_SAMPLE
+	bool "PPG sample waveform screen"
+	depends on APP_FEATURE_DISPLAY && APP_FEATURE_PPG
+	default n
+
+config UI_SCREEN_TEMPERATURE
+	bool "Temperature screen"
+	default n
+	depends on APP_FEATURE_DISPLAY
+
+config UI_SCREEN_USB
+	bool "USB MSC transfer screen"
+	depends on APP_FEATURE_DISPLAY && APP_FEATURE_USB
+	default n
+	help
+	  On-demand USB Mass Storage enable/disable. Only available when
+	  APP_FEATURE_USB=y — not selected by filesystem alone.
+
+config UI_SCREEN_STORAGE
+	bool "NOR / FAT storage detail screen"
+	depends on APP_FEATURE_DISPLAY && APP_FEATURE_FILE_SYSTEM
+	default n
+	help
+	  NOR health, FAT space, and manual reformat. Independent of USB MSC;
+	  selected by APP_FEATURE_FILE_SYSTEM when display is enabled.
+
+config UI_SCREEN_NOTICE
+	bool
+	default y
+	depends on APP_FEATURE_DISPLAY
+	help
+	  Transient timed notice screen (not in swipe carousel). Used when
+	  measurement pre-check fails and for other short status messages.
+
+config UI_SCREEN_PROXIMITY
+	bool "Proximity screen"
+	default n
+	depends on APP_FEATURE_DISPLAY
+
+config UI_SCREEN_BUZZER
+	bool "Buzzer screen"
+	default n
+	depends on APP_FEATURE_DISPLAY
+
+config UI_SCREEN_WIFI
+	bool "Wi-Fi screen"
+	depends on APP_FEATURE_DISPLAY && APP_FEATURE_WIFI
+	default n
+
+config UI_SCREEN_BLE
+	bool "BLE screen"
+	depends on APP_FEATURE_DISPLAY && APP_FEATURE_BLE
+	default n
+
+config UI_SCREEN_MAX32664_UPDATE
+	bool "MAX32664 firmware update screen"
+	default n
+	depends on APP_FEATURE_DISPLAY && APP_FEATURE_MAX32664_UPDATE
+
+config UI_SCREEN_ACCEL
+	bool "Accelerometer screen"
+	default n
+	depends on APP_FEATURE_DISPLAY
+
+config UI_MEASURE_LONG_PRESS_MS
+	int "Long-press on Measure button / SW1 to start cycle (ms)"
+	depends on APP_FEATURE_DISPLAY
+	default 5000
+	range 800 10000
+	help
+	  Hold the Measure All button this long to start a cycle with
+	  proximity bypass. Also used for SW1 (P0.29) hold to start a
+	  manual health measurement cycle. Default 5 seconds.
+
+config UI_POWER_LONG_PRESS_MS
+	int "Long-press on PMIC power button PFN1 (ms)"
+	depends on APP_FEATURE_DISPLAY
+	default 12000
+	range 1000 15000
+	help
+	  Hold the power button (PFN1 / P1.04) to show shutdown countdown.
+	  MAX20360 KIN mode requires >12 s to enter OFF; overlay counts down
+	  over this duration. Short press wakes the backlight or home screen.
+
+endmenu
+
+menu "NiSense — UI sampling intervals"
+
+config HR_SAMPLING_INTERVAL_MINUTES
+	int "Vitals screen default auto-sampling interval (minutes; 0 = once only)"
+	depends on UI_SCREEN_VITALS
+	default 0
+	range 0 1440
+
+config SPO2_SAMPLING_INTERVAL_MINUTES
+	int "PPG sample screen default auto-sampling interval (minutes; 0 = once only)"
+	depends on UI_SCREEN_PPG_SAMPLE
+	default 0
+	range 0 1440
+
+endmenu
+
+menu "NiSense — application features"
+
+config APP_FEATURE_DISPLAY
+	bool "Display + LVGL + touch (umbrella)"
+	default n
+	select UI_SCREEN_DEVICE_INFO
+
+choice APP_FONT_PROFILE
+	prompt "UI font profile"
+	depends on APP_FEATURE_DISPLAY
+	default APP_FONT_PROFILE_RESOURCE_RUNTIME
+	help
+	  Font source only — logos/icons stay on Resource store either way.
+	  Set in prj.conf next to other APP_FEATURE_* toggles.
+
+config APP_FONT_PROFILE_RESOURCE_RUNTIME
+	bool "Resource TinyTTF (production)"
+	select LV_USE_TINY_TTF
+	select RESOURCE_FONTS
+	help
+	  Load subset TTF from the Resource store partition via LVGL TinyTTF.
+
+config APP_FONT_PROFILE_SAFE_COMPILED
+	bool "Compiled Montserrat (debug / low-RAM)"
+	select LV_FONT_MONTSERRAT_20
+	select LV_FONT_MONTSERRAT_28
+	select LV_FONT_MONTSERRAT_48
+	help
+	  Built-in LVGL Montserrat 14/20/28/48 — no TinyTTF parser or Resource font
+	  path. Use when diagnosing LVGL heap OOM or RAM pressure. 48 pt is
+	  for the home-screen clock hero only.
+
+endchoice
+
+config APP_FEATURE_RTT_LOG
+	bool "Application RTT log feature flag"
+	default n
+
+config APP_FEATURE_FAULT_DEBUG
+	bool "Fault-debug diagnostics (asserts, exception details, stack guards)"
+	default n
+	help
+	  Enables conf/features/fault_debug.conf: MPU stack guard, fault register
+	  dumps, and stack usage reporting. Kernel CONFIG_ASSERT is intentionally
+	  left off — LVGL TinyTTF / stb_truetype assert() calls kernel-panic on
+	  benign glyph-cache edge cases during normal UI (see issue #4).
+	  STBTT_assert is softened globally when Resource TinyTTF fonts are enabled.
+
+config APP_FEATURE_SHELL
+	bool "Diagnostics shell over USB CDC VCOM"
+	default n
+	select APP_FEATURE_USB
+	select SHELL
+	select SHELL_MINIMAL
+	help
+	  Enables the `nisense` shell on the USB CDC-ACM VCOM. Selects
+	  APP_FEATURE_USB (USBD + CDC), SHELL, and SHELL_MINIMAL (FLASH
+	  budget). conf/features/shell.conf adds sizing / prompt / DTR when
+	  CMake merges it.
+
+	  Board DT always provides the CDC UART node and zephyr,shell-uart
+	  (SHELL_BACKEND_SERIAL defaults on from that chosen).
+	  No RTT shell — logging stays on RTT when APP_FEATURE_RTT_LOG=y.
+
+config APP_FEATURE_FILE_SYSTEM
+	bool "Filesystem + FAT storage feature (DEPRECATED / removed)"
+	default n
+	help
+	  DEPRECATED: FatFS userdata (/NAND:) and USB-MSC export have been
+	  removed. Measurement persistence uses the NOR record store; app
+	  config uses NVS/settings. Leave this n.
+
+config RECORD_STORE_SUMMARY_RESERVE
+	int "Minimum pending summary slots protected from raw eviction"
+	default 128
+	range 8 2048
+	help
+	  When the record_store ring is full, raw appends will not drop the
+	  oldest slot if it is a clinical summary and doing so would leave
+	  fewer than this many pending summaries. Raw appends return -ENOSPC
+	  instead. Summary appends may still force-drop when no other option
+	  exists.
+
+config APP_TEMP_MONITOR
+	bool "Temperature monitoring (SoC die + skin sensors)"
+	default y
+	depends on SENSOR
+	help
+	  Owns the nRF52840 SoC die temperature and the MAX302xx skin temperature
+	  sensors (wrist continuous + finger spot-check). Reads each sensor on its
+	  correct channel, runs idle periodic sampling, appends to the NOR
+	  record store, and notifies over BLE. Foundation for the agentic
+	  measurement scheduler.
+
+config APP_TEMP_IDLE_INTERVAL_SEC
+	int "Idle temperature sampling interval (seconds)"
+	default 60
+	range 10 3600
+	depends on APP_TEMP_MONITOR
+	help
+	  How often the SoC + wrist skin temperatures are sampled and logged when
+	  no measurement cycle is running.
+
+config APP_TEMP_SELFHEAT_COMPENSATION_X1000
+	int "Wrist skin temp self-heating compensation coefficient (x1000)"
+	default 0
+	range 0 1000
+	depends on APP_TEMP_MONITOR
+	help
+	  BUGFIX (2026-09-05): real exports showed skin temp running 36-41C —
+	  closer to core body temperature than the ~32-35C normal for wrist
+	  skin at rest — and tracking the SoC die temperature fairly closely,
+	  the classic signature of the electronics' own heat bleeding into
+	  the skin-contact sensor reading rather than the sensor purely
+	  reading the skin.
+
+	  When nonzero, applies: corrected_C = wrist_C - (k/1000) *
+	  (soc_die_C - wrist_C), i.e. it pulls the reading down by a fraction
+	  of however much hotter the die currently is than the sensor, so the
+	  correction grows as the device warms up over a session rather than
+	  being a fixed offset.
+
+	  DEFAULT IS 0 (no correction) DELIBERATELY. This coefficient is a
+	  real physical property of this board's specific thermal layout
+	  (how well the wrist sensor is isolated from the main PCB) and can't
+	  be picked correctly from firmware alone — it needs one calibration
+	  session against a reference thermometer: log wrist_C and
+	  soc_die_C together right after boot (die still cool) and again
+	  after 30+ minutes of continuous wear (die fully warmed up),
+	  compare against simultaneous reference readings (e.g. a clinical
+	  IR skin thermometer) at both points, and solve for k from the two
+	  data points. A wrong guess here could make readings worse, not
+	  better, so this stays off until that's done — see
+	  temp_snapshot_now() in src/sensors/temp.c for where it's applied.
+
+config APP_HEALTH_SCHED
+	bool "Agentic health measurement scheduler"
+	default y
+	depends on APP_TEMP_MONITOR
+	help
+	  Unified wear-gated measurement agent. Runs a sequential
+	  temp -> PPG -> glucose cycle and adapts the interval based on the
+	  glucose value, its rate of change, vitals, and battery state. Becomes
+	  the single owner of automatic measurement timing (replaces the glucose
+	  module's standalone periodic timer).
+
+if APP_HEALTH_SCHED
+
+config APP_HEALTH_GLUCOSE_CRIT_LOW
+	int "Glucose critical-low threshold (mg/dL)"
+	default 54
+	range 30 90
+	help
+	  At/below this the scheduler jumps to the fastest cadence and alerts.
+
+config APP_HEALTH_GLUCOSE_CRIT_HIGH
+	int "Glucose critical-high threshold (mg/dL)"
+	default 250
+	range 180 600
+
+config APP_HEALTH_GLUCOSE_ABN_LOW
+	int "Glucose abnormal-low threshold (mg/dL)"
+	default 70
+	range 50 100
+
+config APP_HEALTH_GLUCOSE_ABN_HIGH
+	int "Glucose abnormal-high threshold (mg/dL)"
+	default 180
+	range 120 350
+
+config APP_HEALTH_STEP_GUARD_SEC
+	int "Per-step measurement guard timeout (seconds)"
+	default 90
+	range 20 600
+	help
+	  Safety timeout for each measurement step while sampling is active.
+	  If a sensor never signals completion (e.g. lost skin contact mid-PPG)
+	  the scheduler aborts that step and advances. Post-sample CSV flush
+	  gets a separate shorter guard via APP_HEALTH_PPG_POST_GUARD_SEC.
+
+config APP_HEALTH_PPG_SECONDS
+	int "PPG acquisition window during health cycle (seconds)"
+	default 32 if PPG_ALGO_RESP_ENABLED
+	default 12
+	range 20 32 if PPG_ALGO_RESP_ENABLED
+	range 8 32
+	help
+	  Samples collected per health-cycle PPG step
+	  (count = CONFIG_PPG_ALGO_SAMPLE_RATE × this value).
+
+	  Tracks the same medical/algorithm windows as
+	  CONFIG_PPG_ALGO_BUFFER_SECONDS:
+	  - RESP on: default 32 s (800 @ 25 Hz) — this is the value that
+	    actually controls how many samples a real measurement collects.
+	    Raising CONFIG_PPG_ALGO_BUFFER_SECONDS alone does not change
+	    this — the buffer only grows the capacity available; this is
+	    the target the health-cycle scheduler actually requests.
+	  - RESP off: default 12 s (EC57-oriented HR/SpO2 window).
+
+	  Keep this aligned with the algo buffer when changing either by hand.
+
+config APP_HEALTH_PPG_POST_GUARD_SEC
+	int "PPG post-sample guard (CSV flush, seconds)"
+	default 30
+	range 10 120
+	help
+	  Re-armed when PPG sampling completes, before vitals CSV is written.
+	  Covers sensor shutdown + compact CSV row. Standalone vitals (full raw
+	  waveforms) are not subject to this path.
+
+endif # APP_HEALTH_SCHED
+
+config APP_UI_AGENT
+	bool "Agentic UI presenter (results slideshow)"
+	default y
+	depends on APP_FEATURE_DISPLAY && APP_HEALTH_SCHED
+	help
+	  After each measurement cycle, presents a full-screen overlay that
+	  auto-cycles big icon + value cards (skin temp, HR, SpO2, Hb, glucose)
+	  and dismisses on touch. Floats above the active screen without
+	  disturbing the swipe carousel.
+
+if APP_UI_AGENT
+
+config APP_UI_AGENT_SLIDE_MS
+	int "Slideshow card dwell time (ms)"
+	default 4000
+	range 1000 15000
+
+config APP_UI_AGENT_MAX_LOOPS
+	int "Slideshow max loops before auto-dismiss (0 = loop until touched)"
+	default 20
+	range 0 1000
+
+config APP_UI_AGENT_DEFER_MS
+	int "Defer slideshow if screen was touched within this window (ms)"
+	default 15000
+	range 0 60000
+
+endif # APP_UI_AGENT
+
+config APP_FEATURE_CONFIG_PERSIST
+	bool "App config persistence (NVS / settings)"
+	default n
+	help
+	  Persist struct app_config via Zephyr settings (NVS key cm/app).
+
+config APP_FEATURE_WIFI
+	bool "Wi-Fi STA + HTTP bulk transfer (umbrella)"
+	default n
+	depends on APP_FEATURE_DISPLAY
+	help
+	  Enables WExx STA Wi-Fi (via conf/features/wifi.conf), BLE …def2
+	  credential connect, and phone-hosted HTTP bulk sync (f206/f207).
+	  SoftAP/MQTT/WebSocket stay off in the lean product overlay.
+	  Live control and fallback sync remain on BLE.
+
+config APP_FEATURE_CLOUD_TELEMETRY
+	bool "Cloud MQTT telemetry (vitals + glucose publish)"
+	default n
+	depends on APP_FEATURE_WIFI
+	help
+	  When enabled in config.json (cloud.enabled), publishes vitals and
+	  glucose measurement JSON to an MQTT broker after Wi-Fi connects.
+	  Requires SECURE BLE profile for credential provisioning in production.
+
+config APP_FEATURE_BLE
+	bool "BLE UI (umbrella)"
+	default n
+	depends on APP_FEATURE_DISPLAY && BT
+
+config APP_FEATURE_USB
+	bool "USB device (USBD next + CDC-ACM VCOM)"
+	default n
+	select SERIAL
+	select UART_LINE_CTRL
+	select USB_DEVICE_STACK_NEXT
+	select CDC_ACM_SERIAL_INITIALIZE_AT_BOOT
+	help
+	  Enables the USB device stack and CDC-ACM serial (VCOM). Critical
+	  stack symbols are selected here so shell/USB stay coherent even when
+	  CMake has not yet re-merged conf/features/usb.conf (EXTRA_CONF is
+	  only refreshed on CMake reconfigure, not on every prj.conf edit).
+
+	  usb.conf still supplies stack sizes, USB strings, and log levels
+	  when the overlay is merged. Board DT always describes USBD + CDC
+	  UART + zephyr,shell-uart (64/65 overlayinc).
+
+	  APP_FEATURE_SHELL selects this feature and adds SHELL. FatFS MSC
+	  stays off in usb.conf.
+
+config APP_FEATURE_SYSTEMVIEW
+	bool "SEGGER SystemView tracing (RTT channel 1)"
+	default n
+	depends on SEGGER_SYSTEMVIEW
+
+config APP_FEATURE_GLUCOSE
+	bool "Glucose measurement + UI (umbrella)"
+	default n
+	depends on APP_FEATURE_DISPLAY && ADC && GPIO
+	select GLUCOSE_SENSOR
+	select UI_SCREEN_GLUCOSE
+
+config APP_FEATURE_MAX32664
+	bool "MAX32664 sensor hub (umbrella; GWEC/GWED variants)"
+	default n
+	depends on MAX32664
+
+config APP_FEATURE_MAX3010X
+	bool "MAX3010x standalone PPG sensor (umbrella; MAX30101/02/05)"
+	default n
+	depends on MAX3010X_PPG
+
+config APP_FEATURE_PPG
+	bool "PPG measurement pipeline (umbrella)"
+	default n
+	depends on APP_FEATURE_MAX32664 || APP_FEATURE_MAX3010X
+	imply PPG_ALGO
+	select UI_SCREEN_VITALS if APP_FEATURE_DISPLAY
+	select UI_SCREEN_VASCULAR if APP_FEATURE_DISPLAY
+	select PPG_ALGO_HR_ENABLED if PPG_ALGO
+	select PPG_ALGO_SPO2_ENABLED if PPG_ALGO
+
+config PPG_LOG_DC_AC
+	bool "Retain per-sample PPG DC/AC series for NOR raw chunks"
+	default y
+	depends on APP_FEATURE_PPG
+	help
+	  Allocates IR/Red/Green DC and AC int32 arrays in the PPG sample
+	  buffer (~12 KB at 500 samples) so vitals logging can write PPG_RAW
+	  chunks with optics + DC/AC intermediates for AI export.
+
+config PPG_PROX_ABORT_MISS_SAMPLES
+	int "PPG no-contact abort threshold (consecutive missed samples)"
+	default 5
+	range 1 100
+	depends on APP_FEATURE_PPG
+	help
+	  Number of consecutive no-contact proximity samples required before an
+	  active PPG measurement is aborted. Lower values stop faster on finger
+	  lift; higher values are more tolerant to short contact glitches.
+
+config PPG_PROX_GUARD_ENABLE
+	bool "Enable PPG proximity guard checks"
+	default y
+	depends on APP_FEATURE_PPG
+	help
+	  Enables proximity-based safeguards for PPG measurements:
+	  - start-block when no contact is detected,
+	  - mid-measurement abort on sustained no-contact,
+	  - end-of-measurement no-contact quality override.
+	  Disable this for development bring-up when you want uninterrupted
+	  sampling without proximity gating.
+
+config PPG_PROGRESS_NOTIFY_EVERY_N_SAMPLES
+	int "BLE progress notify cadence (samples)"
+	default 5
+	range 1 100
+	depends on APP_FEATURE_PPG && APP_FEATURE_BLE
+	help
+	  Send BLE measurement-progress notifications every N samples.
+	  Lower values increase BLE/log traffic; higher values reduce overhead.
+
+config PPG_SAMPLE_LOG_EVERY_N_SAMPLES
+	int "PPG sample RTT log cadence (samples)"
+	default 25
+	range 1 300
+	depends on APP_FEATURE_PPG
+	help
+	  Print "PPG sample X/Y" logs every N samples (plus startup/last sample).
+
+config PPG_SAMPLE_LOG_INITIAL_SAMPLES
+	int "PPG sample RTT initial logs"
+	default 5
+	range 0 50
+	depends on APP_FEATURE_PPG
+	help
+	  Number of first samples to always log at measurement start.
+
+config APP_FEATURE_MAX32664_UPDATE
+	bool "MAX32664 firmware update + UI (umbrella)"
+	default n
+	depends on APP_FEATURE_DISPLAY && MAX32664
+	select UI_SCREEN_MAX32664_UPDATE
+	help
+	  Hub firmware update UI. Legacy .msbl scan via FatFS requires
+	  APP_FEATURE_FILE_SYSTEM (unsupported); keep n unless a non-FAT
+	  update path is provided.
+
+config APP_FEATURE_DIAG_MONITOR
+	bool "Periodic diagnostics monitor thread (stack + heap dump)"
+	default n
+	select THREAD_ANALYZER
+	help
+	  Master switch for development RAM / heap tuning. Enables a
+	  low-priority background thread that periodically dumps thread
+	  stacks, heap stats, and LVGL pool usage over RTT.
+	  Tuning Kconfig: Kconfig.diag_monitor.
+	  Zephyr overlay: conf/features/diag_monitor.conf (auto-merged when y).
+	  Does not enable THREAD_ANALYZER_AUTO — diag_monitor owns dump cadence.
+
+endmenu
+
+rsource "Kconfig.diag_monitor"
+
+menu "NiSense — optional modules (prj.conf compatibility)"
+
+config RESOURCE
+	bool "UI Resource store A/B (fonts/logos/icons; QSPI mmap)"
+	default n
+	help
+	  Enables the Resource A/B NOR store (API: resource_*). Partition/asset
+	  magic values are XIPA/XAST (on-disk identifiers).
+
+config RESOURCE_FONTS
+	bool
+	default n
+	depends on RESOURCE && LVGL && LV_USE_TINY_TTF
+	help
+	  Selected by APP_FONT_PROFILE_RESOURCE_RUNTIME only. Not a prj.conf toggle.
+
+config RESOURCE_FONTS_RAM_CACHE
+	bool "Cache the subset TTF in RAM (robust against QSPI contention/DPD)"
+	depends on RESOURCE_FONTS
+	default n
+	help
+	  Copy the subset TTF from Resource flash into a static RAM buffer at init so
+	  TinyTTF never reads QSPI mid-draw. Costs RESOURCE_FONTS_RAM_CACHE_SIZE bytes
+	  of RAM (~48 KB) and overflows nRF52840 with the full feature set — leave
+	  n unless you have headroom. With n, glyphs are read via mmap (wake QSPI
+	  via resource_wake on display resume).
+
+config RESOURCE_FONTS_RAM_CACHE_SIZE
+	int "RAM cache size for the subset TTF (bytes)"
+	depends on RESOURCE_FONTS_RAM_CACHE
+	default 49152
+	help
+	  Size of the static RAM buffer used to cache the subset TTF. Must be at
+	  least as large as fonts/Montserrat-Subset.ttf; otherwise the font falls
+	  back to Resource mmap reads.
+
+config CALIBRATION
+	bool "Calibration subsystem (application)"
+	default n
+
+config RESOURCE_LOG_LEVEL
+	int "Resource store log level"
+	default 3
+	range 0 4
+
+config CALIBRATION_LOG_LEVEL
+	int "Calibration log level"
+	default 3
+	range 0 4
+
+config UI_STARTUP_LOGO
+	bool "Show startup logo on boot"
+	default n
+
+endmenu
+
+menu "NiSense — thread stack tuning"
+
+# All stack sizes here correspond to previously hard-coded values in the
+# application. They are exposed as Kconfig symbols so they can be tuned from
+# prj.conf against the high-watermark reported by CONFIG_APP_FEATURE_DIAG_MONITOR
+# (Kconfig.diag_monitor / conf/features/diag_monitor.conf).
+
+config GLUCOSE_UI_THREAD_STACK_SIZE
+	int "glucose measurement worker thread stack size (bytes)"
+	default 1536
+	range 768 8192
+	depends on APP_FEATURE_GLUCOSE
+	help
+	  Stack for the background glucose measurement thread in
+	  src/ui/glucose_ui.c. The algorithm itself runs on the glucose driver
+	  workq; this thread only sequences the measurement and updates the
+	  UI.
+
+config MAX32664_UPDATE_THREAD_STACK_SIZE
+	int "MAX32664 firmware-update thread stack size (bytes)"
+	default 2048
+	range 1024 8192
+	depends on APP_FEATURE_MAX32664_UPDATE
+	help
+	  Stack for the MAX32664 OTA firmware update worker
+	  (src/ui/max32664_update_ui.c). Firmware page buffer lives in .bss;
+	  this stack only holds the state machine.
+
+config LED_STATUS_THREAD_STACK_SIZE
+	int "LED status animation thread stack size (bytes)"
+	default 1024
+	range 512 4096
+	help
+	  Stack for the LED status animation thread (src/core/led_status.c).
+	  Only does I2C + logging, 1 KB is plenty.
+
+endmenu
+
+menu "NiSense — BLE DFU"
+
+config APP_FEATURE_BLE_DFU
+	bool "BLE DFU via MCUmgr/SMP (OTA image upload)"
+	default n
+	depends on APP_FEATURE_BLE && BOOTLOADER_MCUBOOT
+	help
+	  Enables MCUmgr SMP-over-BLE transport for over-the-air firmware
+	  updates.  Exposes the Nordic SMP service alongside the existing
+	  custom GATT services.  The companion app uploads a signed .bin
+	  image which is written to the external secondary slot; MCUboot
+	  validates the RSA-2048 signature and performs the swap on the
+	  next reboot.
+
+	  Adds ~12 KB flash and ~4 KB RAM.  Keep disabled in production
+	  builds where OTA is not needed.
+
+endmenu
+
+config BLE_PPG_STREAMING
+	bool "Enable PPG raw sample BLE streaming"
+	depends on BT
+	default n
+	help
+	  Adds a PPG Raw Stream characteristic (0xf106) to the Sensor Data
+	  Service. When subscribed, the device sends raw IR/Red/Green ADC
+	  counts and accelerometer XYZ every Nth sample (N = PPG Stream
+	  Decimation characteristic, default 3 ~= 10 Hz).
+	  Increases flash by ~0.5 KB.
+
+config BLE_ACCEL_STREAMING
+	bool "Enable accelerometer XYZ BLE streaming"
+	depends on BT
+	default n
+	help
+	  Adds an Accelerometer Stream characteristic (0xf10c) to the Sensor
+	  Data Service. When subscribed, the device sends LIS2DS12 XYZ samples
+	  at approximately 10 Hz (every 3rd sample from the 25 Hz ODR).
+	  Increases flash by ~0.3 KB.
+
+choice BLE_SECURITY_PROFILE
+	prompt "BLE GATT security profile"
+	depends on BT
+	default BLE_SECURITY_PROFILE_SECURE if APP_FEATURE_BLE
+	default BLE_SECURITY_PROFILE_OPEN
+
+config BLE_SECURITY_PROFILE_OPEN
+	bool "Open (development — unpaired health streaming allowed)"
+	help
+	  Permissive GATT permissions for local development and protocol
+	  bring-up. Health telemetry is readable without MITM pairing.
+
+config BLE_SECURITY_PROFILE_SECURE
+	bool "Secure (production — MITM required for health data)"
+	help
+	  Applies permission hardening from docs/ble/BLE_DATA_SECURITY_DATABASE.md.
+	  Vitals, glucose, PPG, and sensor_all require authenticated (L3) bonds.
+	  Use conf/features/ble_open.conf overlay to revert for dev builds.
+
+endchoice
+
+orsource "drivers/fuel_gauge/Kconfig.max20360"
+
+menu "NiSense — UI lifecycle debug"
+
+config APP_UI_OBJ_LIFECYCLE_DEBUG
+	bool "Log LVGL widget CREATE/DELETE lifecycle (RTT)"
+	default n
+	depends on APP_FEATURE_DISPLAY
+	help
+	  When enabled, logs explicit widget creation and LV_EVENT_DELETE for
+	  every object in a screen tree. Requires CONFIG_LV_USE_OBJ_NAME.
+	  Per-screen DBG levels: conf/features/display.conf (CONFIG_*_UI_LOG_LEVEL_DBG).
+
+endmenu
+
+menu "NiSense — UI module log levels"
+	depends on APP_FEATURE_DISPLAY
+
+module = UI_OBJ_TRACK
+module-str = UI object lifecycle trace
+source "subsys/logging/Kconfig.template.log_config"
+
+module = UI
+module-str = UI carousel
+source "subsys/logging/Kconfig.template.log_config"
+
+module = UI_SHELL
+module-str = UI shell chrome
+source "subsys/logging/Kconfig.template.log_config"
+
+module = UI_AGENT
+module-str = UI agent
+source "subsys/logging/Kconfig.template.log_config"
+
+module = DEVICE_INFO_UI
+module-str = Device info (home) screen
+source "subsys/logging/Kconfig.template.log_config"
+
+module = HOME_INFO_UI
+module-str = Home info screen
+source "subsys/logging/Kconfig.template.log_config"
+
+module = MEASURE_UI
+module-str = Measure screen
+source "subsys/logging/Kconfig.template.log_config"
+
+module = POWER_UI
+module-str = Power screen
+source "subsys/logging/Kconfig.template.log_config"
+
+module = RTC_UI
+module-str = RTC screen
+source "subsys/logging/Kconfig.template.log_config"
+
+module = GLUCOSE_UI
+module-str = Metabolic screen
+source "subsys/logging/Kconfig.template.log_config"
+
+module = VITALS_UI
+module-str = Vital screen
+source "subsys/logging/Kconfig.template.log_config"
+
+module = VASCULAR_UI
+module-str = Vascular screen
+source "subsys/logging/Kconfig.template.log_config"
+
+module = PPG_SAMPLE_UI
+module-str = PPG sample screen
+source "subsys/logging/Kconfig.template.log_config"
+
+module = TEMP_UI
+module-str = Temperature screen
+source "subsys/logging/Kconfig.template.log_config"
+
+module = USB_UI
+module-str = USB screen
+source "subsys/logging/Kconfig.template.log_config"
+
+module = STORAGE_UI
+module-str = Storage screen
+source "subsys/logging/Kconfig.template.log_config"
+
+module = PROXIMITY_UI
+module-str = Proximity screen
+source "subsys/logging/Kconfig.template.log_config"
+
+module = BUZZER_UI
+module-str = Buzzer screen
+source "subsys/logging/Kconfig.template.log_config"
+
+module = WIFI_UI
+module-str = Wi-Fi screen
+source "subsys/logging/Kconfig.template.log_config"
+
+module = BLE_UI
+module-str = BLE screen
+source "subsys/logging/Kconfig.template.log_config"
+
+module = MAX32664_UPDATE_UI
+module-str = MAX32664 update screen
+source "subsys/logging/Kconfig.template.log_config"
+
+module = ACCEL_UI
+module-str = Accelerometer screen
+source "subsys/logging/Kconfig.template.log_config"
+
+endmenu
+
+source "Kconfig.zephyr"

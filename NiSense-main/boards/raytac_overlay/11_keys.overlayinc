@@ -1,0 +1,20 @@
+/* SW1 / SW2 GPIO pin definitions for app hw_button (no Zephyr gpio-keys driver).
+ * Compatible hcm,gpio-button is metadata-only; IRQs are registered in hw_button.c.
+ */
+/ {
+	hcm_buttons {
+		/* SW1: Screen navigation button on P0.29 */
+		sw1: button_sw1 {
+			compatible = "hcm,gpio-button";
+			gpios = <&gpio0 29 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			label = "Screen Navigation Button";
+		};
+
+		/* SW2: PMIC PFN1 / KIN power button on P1.04 (parallel MCU sense) */
+		sw2: button_sw2 {
+			compatible = "hcm,gpio-button";
+			gpios = <&gpio1 4 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			label = "PMIC PFN1 KIN Power Button";
+		};
+	};
+};

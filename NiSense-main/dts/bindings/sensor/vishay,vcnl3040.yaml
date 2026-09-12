@@ -1,0 +1,83 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2025 AARMS Value Chain
+
+description: Vishay VCNL3040 Proximity Sensor with I2C interface
+
+compatible: "vishay,vcnl3040"
+
+include: [sensor-device.yaml, i2c-device.yaml]
+
+properties:
+  led-current:
+    type: int
+    default: 8
+    description: |
+      IR LED current setting (0-8):
+        0: 50 mA
+        1: 75 mA
+        2: 100 mA
+        3: 120 mA
+        4: 140 mA
+        5: 160 mA
+        6: 180 mA
+        7: 200 mA
+        8: 50 mA (default)
+    enum: [0, 1, 2, 3, 4, 5, 6, 7, 8]
+
+  duty-cycle:
+    type: int
+    default: 0
+    description: |
+      IR LED duty cycle (0-3):
+        0: 1/40 (default)
+        1: 1/80
+        2: 1/160
+        3: 1/320
+    enum: [0, 1, 2, 3]
+
+  integration-time:
+    type: int
+    default: 3
+    description: |
+      Proximity integration time (0-7):
+        0: 1T (default)
+        1: 1.5T
+        2: 2T
+        3: 2.5T
+        4: 3T
+        5: 3.5T
+        6: 4T
+        7: 8T (recommended for wearable: good SNR, ~2ms)
+    enum: [0, 1, 2, 3, 4, 5, 6, 7]
+
+  multi-pulse:
+    type: int
+    default: 2
+    description: |
+      Multi-pulse number for averaging (0-3):
+        0: 1 pulse
+        1: 2 pulses
+        2: 4 pulses (default, recommended for wearable SNR)
+        3: 8 pulses
+      Higher values improve SNR but increase measurement time.
+    enum: [0, 1, 2, 3]
+
+  proximity-threshold-low:
+    type: int
+    default: 0
+    description: |
+      Low threshold for proximity interrupt (0-65535).
+      Interrupt triggers when proximity value falls below this.
+
+  proximity-threshold-high:
+    type: int
+    default: 10000
+    description: |
+      High threshold for proximity interrupt (0-65535).
+      Interrupt triggers when proximity value exceeds this.
+
+  int-gpios:
+    type: phandle-array
+    description: |
+      INT pin connection (active low).
+      Triggers when proximity crosses configured thresholds.

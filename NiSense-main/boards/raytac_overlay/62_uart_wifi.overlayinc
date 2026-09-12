@@ -1,0 +1,45 @@
+/* UART group: controller + pinctrl + Wi-Fi top-level node */
+&pinctrl {
+	uart0_wifi: uart0_wifi {
+		group1 {
+			psels = <NRF_PSEL(UART_TX, 0, 6)>,
+				<NRF_PSEL(UART_RX, 0, 8)>;
+		};
+		group2 {
+			psels = <NRF_PSEL(UART_RX, 0, 8)>;
+			bias-pull-up;
+		};
+	};
+
+	uart0_wifi_sleep: uart0_wifi_sleep {
+		group1 {
+			psels = <NRF_PSEL(UART_TX, 0, 6)>,
+				<NRF_PSEL(UART_RX, 0, 8)>;
+			low-power-enable;
+		};
+	};
+};
+
+&uart0 {
+	status = "okay";
+	compatible = "nordic,nrf-uarte";
+	current-speed = <38400>;
+	pinctrl-0 = <&uart0_wifi>;
+	pinctrl-1 = <&uart0_wifi_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+&uart1 {
+	status = "disabled";
+};
+
+&{/} {
+	wexx_wifi: wexx-wifi {
+		status = "okay";
+		compatible = "wexx";
+		uart = <&uart0>;
+		current-speed = <38400>;
+		enable-gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
+		// hw-flow-control;
+	};
+};

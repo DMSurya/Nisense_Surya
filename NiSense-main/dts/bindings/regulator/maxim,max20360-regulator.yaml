@@ -1,0 +1,70 @@
+# Copyright (c) 2025
+# SPDX-License-Identifier: Apache-2.0
+
+description: Maxim MAX20360 PMIC Regulator Container
+
+compatible: "maxim,max20360-regulator"
+
+include: base.yaml
+
+child-binding:
+  include:
+    - name: regulator.yaml
+      property-allowlist:
+        - regulator-name
+        - regulator-init-microvolt
+        - regulator-min-microvolt
+        - regulator-max-microvolt
+        - regulator-boot-on
+        - regulator-always-on
+
+  properties:
+    maxim,power-cycle-on-init:
+      type: boolean
+      description: |
+        If set, performs a clean power cycle during regulator initialization:
+        1. Disable regulator (turn OFF)
+        2. Wait for power-cycle-delay-ms
+        3. Enable regulator (turn ON) with configured voltage
+        
+        This is useful for peripherals that need a hard reset cycle (e.g., sensor hubs
+        that get stuck in reset state). The power cycle happens during POST_KERNEL
+        initialization, before application starts.
+        
+        Note: Overrides regulator-boot-on behavior - regulator will be disabled first
+        even if boot-on is set.
+    
+    maxim,power-cycle-delay-ms:
+      type: int
+      default: 100
+      description: |
+        Delay in milliseconds between disable and re-enable during power cycle.
+        Default is 100ms, which is sufficient for most peripherals to fully reset.
+        Minimum value should be at least 50ms to ensure proper power-down.
+
+    maxim,source:
+      type: string
+      required: true
+      enum:
+        - "bk1"
+        - "bk2"
+        - "bk3"
+        - "bbout"
+        - "l1out"
+        - "l2out"
+        - "lsw1"
+        - "lsw2"
+        - "boost"
+        - "sfout"
+      description: |
+        Specifies which regulator output this node controls.
+        - bk1: Buck 1 (0.55-1.18V, 10mV steps)
+        - bk2: Buck 2 (0.55-2.125V, 25mV steps)
+        - bk3: Buck 3 (0.55-3.7V, 50mV steps)
+        - bbout: Buck-Boost output (2.5-5.5V, 50mV steps)
+        - l1out: LDO1 output (0.5-1.95V, 25mV steps)
+        - l2out: LDO2 output (0.9-4.0V, 100mV steps)
+        - lsw1: Load Switch 1 (pass-through, no voltage control)
+        - lsw2: Load Switch 2 (pass-through, no voltage control)
+        - boost: Boost output (5.0-20V, configurable steps)
+        - sfout: Smart fixed output (3.3V or 5.0V selectable)
