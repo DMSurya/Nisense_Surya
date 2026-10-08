@@ -6,6 +6,7 @@ zephyr_library_sources_ifdef(CONFIG_GLUCOSE_SENSOR
 	glucose_algorithm.c
 	glucose_algorithm_profiles.c
 	glucose_model_xip.c
+	glucose_insulin_predict.c
 )
 
 # Add include directory for public API headers

@@ -58,13 +58,21 @@
 		 * (intercept=161.832, k=1.75 — see
 		 * algorithm-intercept-constant / algorithm-outlier-k-factor
 		 * below) were derived against the OLD ~2170-count range.
-		 * Moving to ~3260 counts is not a free change — treat the
+		 * Moving to ~2600 counts is not a free change — treat the
 		 * mg/dL output as needing re-validation against a reference
 		 * measurement at this new operating point, not as
 		 * automatically "more accurate" just because it uses more
 		 * of the ADC's range.
+		 *
+		 * 2026-09-09: moved back here from ADC_GAIN_1_4 (80%) per
+		 * the team's own SNR/CV analysis across 53%/64%/80%
+		 * operating points (Complete_Glucose_ADC_SNR_Analysis) —
+		 * 64% measured the best mean SNR (50.22 dB) and lowest mean
+		 * CV (0.32%) of the three, with 80% showing more variation
+		 * (CV 0.59%) despite the higher raw ADC magnitude. Evidence-
+		 * based call from real collected data, not a guess.
 		 */
-		zephyr,gain = "ADC_GAIN_1_4";
+		zephyr,gain = "ADC_GAIN_1_5";
 		zephyr,reference = "ADC_REF_INTERNAL";
 		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
 		zephyr,input-positive = <NRF_SAADC_AIN1>; /* P0.03 */

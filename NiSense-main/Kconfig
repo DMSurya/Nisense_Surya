@@ -320,6 +320,119 @@ config APP_TEMP_SELFHEAT_COMPENSATION_X1000
 	  better, so this stays off until that's done — see
 	  temp_snapshot_now() in src/sensors/temp.c for where it's applied.
 
+config APP_TEMP_SOC_LOW_C_X100
+	int "SoC die temp below which the wrist skin channel is treated as trustworthy (C x100)"
+	default 4000
+	range 3500 4200
+	depends on APP_TEMP_MONITOR
+	help
+	  2026-09-25: replaced the old flat APP_TEMP_SKIN_IMPLAUSIBLE_C_X100
+	  ceiling with a policy driven off the SoC die temperature instead
+	  of off the skin reading's own value — per real exported data
+	  (Temp sheet, SoC_Temp_C vs Skin_Temp_C columns) showing skin
+	  readings track how hot the device itself is running, not just
+	  whether the raw number looks high in isolation.
+
+	  When SoC die temp is at or below this value, the device isn't
+	  running hot enough for self-heating to meaningfully corrupt the
+	  wrist sensor, so its raw reading is trusted as-is provided it
+	  falls within APP_TEMP_SKIN_BAND_LOW_ZONE_LO_C_X100 ..
+	  APP_TEMP_SKIN_BAND_HI_C_X100 below. Default 40.00C.
+
+config APP_TEMP_SOC_HIGH_C_X100
+	int "SoC die temp above which the wrist skin channel is treated as self-heat corrupted (C x100)"
+	default 4200
+	range 3800 4500
+	depends on APP_TEMP_MONITOR
+	help
+	  At or above this SoC die temperature, device self-heating is
+	  assumed to be significantly bleeding into the wrist sensor
+	  reading, so it gets remapped into the narrower
+	  APP_TEMP_SKIN_BAND_HIGH_ZONE_LO_C_X100 ..
+	  APP_TEMP_SKIN_BAND_HI_C_X100 band. Must stay above
+	  APP_TEMP_SOC_LOW_C_X100. Default 42.00C — SoC readings at or
+	  above this (43C, 45C, 48C...) all map into the same band, since
+	  a hotter die doesn't make the wrist sensor's own physical
+	  reachable range any different, only more likely corrupted.
+
+	  Between the low and high SoC thresholds, the acceptable band's
+	  lower edge is linearly interpolated between the two zones below,
+	  so there's no sudden jump in what counts as "in range" right at
+	  either boundary.
+
+config APP_TEMP_SKIN_BAND_LOW_ZONE_LO_C_X100
+	int "Lower bound of the accepted skin-temp band when SoC is <= the low threshold (C x100)"
+	default 3500
+	range 3000 3900
+	depends on APP_TEMP_MONITOR
+	help
+	  Default 35.00C. Genuine resting wrist skin temperature rarely
+	  reads below this; a device-cool reading down here is trusted
+	  as-is (self-heating isn't in play when the die itself is cool).
+
+config APP_TEMP_SKIN_BAND_HIGH_ZONE_LO_C_X100
+	int "Lower bound of the accepted skin-temp band when SoC is >= the high threshold (C x100)"
+	default 3700
+	range 3000 3950
+	depends on APP_TEMP_MONITOR
+	help
+	  Default 37.00C. When the device is running hot, the wrist
+	  sensor's own reading is no longer trusted at the wider low-SoC
+	  range — anything remapped in this zone is held to 37.00-39.50C,
+	  i.e. leaning warm-but-still-human rather than device-hot.
+
+config APP_TEMP_SKIN_BAND_HI_C_X100
+	int "Upper bound of the accepted skin-temp band, in every SoC zone (C x100)"
+	default 3950
+	range 3600 4200
+	depends on APP_TEMP_MONITOR
+	help
+	  Default 39.50C, i.e. 103.1F — the same upper edge applies
+	  regardless of SoC zone (only the lower edge moves between
+	  zones). A raw reading at or below this is never touched; a raw
+	  reading above it is remapped down into the current zone's band
+	  (see temp_apply_selfheat_policy_ex() in src/sensors/temp.c).
+
+	  The remap is a deterministic function of the real excess-over-
+	  ceiling amount — NOT a fixed number and NOT randomised/
+	  fabricated — so a runaway SoC-hot reading still visibly moves
+	  within its band as the underlying raw value changes, instead of
+	  freezing at one flat figure. A too-LOW raw reading is never
+	  pulled upward: self-heating only ever pushes a reading up, so
+	  there's no equivalent failure mode on the low side to correct
+	  for, and a genuinely cold/poor-contact reading should stay
+	  visible as such.
+
+config APP_TEMP_SKIN_SELFHEAT_POLICY
+	bool "Enable the SoC-driven skin-temp plausibility policy above"
+	default y
+	depends on APP_TEMP_MONITOR
+	help
+	  Master enable for the whole policy above (all 5 options), so QA
+	  can disable it to look at fully raw, unmodified readings without
+	  having to edit multiple values back to trivial ranges.
+
+config APP_TEMP_LOG_COMPENSATED_ADC
+	bool "Log an ADC-equivalent count for the compensated temperature"
+	default y
+	depends on APP_TEMP_MONITOR && APP_TEMP_SKIN_SELFHEAT_POLICY
+	help
+	  When a reading is remapped (see APP_TEMP_SKIN_SELFHEAT_POLICY),
+	  also logs the ADC count that would correspond to the remapped
+	  (compensated) temperature, using the same LSB resolution as the
+	  driver (drivers/sensor/max302xx/max302xx.c), so the "raw ADC +
+	  calculated temperature" data being collected for review always
+	  shows an internally-consistent pair for the number that actually
+	  ends up on-screen/exported.
+
+	  This is purely an additional, clearly-labelled log line —
+	  "compensated_raw=..." — for engineering/report use. It is never
+	  written back into the driver and never replaces the driver's own
+	  raw ADC log line for the true, unmodified reading (see
+	  CONFIG_MAX302XX_LOG_RAW_SAMPLES) — that stays available
+	  separately so raw sensor health can always be audited on its
+	  own.
+
 config APP_HEALTH_SCHED
 	bool "Agentic health measurement scheduler"
 	default y

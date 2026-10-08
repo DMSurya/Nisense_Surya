@@ -67,6 +67,22 @@ static struct glucose_result_listener glucose_result_listeners[2];
 static float glucose_fasting_insulin_uiu_ml = DEFAULT_FASTING_INSULIN_UIU_ML;
 static K_MUTEX_DEFINE(glucose_insulin_mutex);
 
+/*
+ * BUGFIX (2026-10-06): true only once glucose_set_fasting_insulin() has
+ * been called with a REAL, externally-provided value (e.g. a real lab
+ * result relayed over BLE) — never set just by the variable above
+ * sitting at its compiled-in default. glucose_start_measurement_from_ui()
+ * below checks this before pushing glucose_fasting_insulin_uiu_ml down to
+ * the driver: previously it pushed the (always-positive, always-default-
+ * unless-set) value before every single trigger, which meant the
+ * driver's own glucose-range insulin prediction (see
+ * drivers/sensor/glucose/glucose_insulin_predict.c) could never run —
+ * the pre-seeded default always "won". Now the push only happens when a
+ * real value genuinely exists; otherwise the driver predicts fasting
+ * insulin from each measurement's own glucose reading instead.
+ */
+static bool glucose_fasting_insulin_user_set;
+
 static uint16_t glucose_prog_taken;
 static uint16_t glucose_prog_target;
 
@@ -611,16 +627,36 @@ int glucose_start_measurement_from_ui(void)
 		return -EIO;
 	}
 	
-	/* Set fasting insulin value from module variable */
-	float fasting_insulin_uiu_ml;
+	/* BUGFIX (2026-10-06): only forward a REAL, user-provided fasting
+	 * insulin value to the driver. Previously this unconditionally
+	 * pushed glucose_fasting_insulin_uiu_ml (which sits at a fixed
+	 * Kconfig default unless someone has called
+	 * glucose_set_fasting_insulin() with a real value) before every
+	 * single trigger — covering every path into a measurement: manual
+	 * UI button (glucose_ui.c), BLE-triggered (ble.c), and the
+	 * automatic scheduled cycle (health_sched.c) all call this same
+	 * function. That always-positive push meant the driver's own
+	 * glucose-range insulin prediction never got a chance to run (see
+	 * glucose_insulin_predict.c). Skipping the push when no real value
+	 * exists lets the driver predict fasting insulin from this
+	 * measurement's own glucose reading instead. */
+	bool have_real_insulin;
+	float fasting_insulin_uiu_ml = 0.0f;
+
 	k_mutex_lock(&glucose_insulin_mutex, K_FOREVER);
-	fasting_insulin_uiu_ml = glucose_fasting_insulin_uiu_ml;
+	have_real_insulin = glucose_fasting_insulin_user_set;
+	if (have_real_insulin) {
+		fasting_insulin_uiu_ml = glucose_fasting_insulin_uiu_ml;
+	}
 	k_mutex_unlock(&glucose_insulin_mutex);
 
-	int ret = glucose_sensor_set_fasting_insulin(glucose_dev, fasting_insulin_uiu_ml);
-	if (ret < 0) {
-		LOG_WRN("Failed to set fasting insulin on device: %d", ret);
-		/* Continue anyway with default value */
+	if (have_real_insulin) {
+		int ret = glucose_sensor_set_fasting_insulin(glucose_dev, fasting_insulin_uiu_ml);
+
+		if (ret < 0) {
+			LOG_WRN("Failed to set fasting insulin on device: %d", ret);
+			/* Continue anyway -- driver will predict from glucose instead */
+		}
 	}
 	
 	/* Reset RTC glucose sample counter (next auto-sample in 10min) */
@@ -787,9 +823,11 @@ int glucose_set_fasting_insulin(float insulin_uiu_ml)
 	
 	k_mutex_lock(&glucose_insulin_mutex, K_FOREVER);
 	glucose_fasting_insulin_uiu_ml = insulin_uiu_ml;
+	glucose_fasting_insulin_user_set = true;
 	k_mutex_unlock(&glucose_insulin_mutex);
 	
-	LOG_INF("Fasting insulin set to %.2f uIU/mL", (double)insulin_uiu_ml);
+	LOG_INF("Fasting insulin set to %.2f uIU/mL (real value, will be used as-is for the next measurement)",
+		(double)insulin_uiu_ml);
 	return 0;
 }
 

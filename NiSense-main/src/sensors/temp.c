@@ -149,6 +149,158 @@ int temp_read_soc(float *out_c)
 	return temp_read_chan(s_soc_dev, SENSOR_CHAN_DIE_TEMP, out_c);
 }
 
+/* App-layer mirror of MAX302XX_TEMP_RESOLUTION in
+ * drivers/sensor/max302xx/max302xx.c — used ONLY to print a human-facing
+ * equivalent ADC count alongside a compensated temperature in the log
+ * (CONFIG_APP_TEMP_LOG_COMPENSATED_ADC below). Never fed back into the
+ * driver. Keep this in sync with the driver's real LSB size if that ever
+ * changes. */
+#define TEMP_APP_ADC_RESOLUTION_C 0.005f
+
+/*
+ * BUGFIX (2026-09-24): the on-device Temperature screen (src/ui/temp_ui.c)
+ * used to call sensor_sample_fetch()/sensor_channel_get() directly on the
+ * wrist/finger devices instead of going through temp_read_wrist()/
+ * temp_read_finger() below — so the self-heat plausibility ceiling and
+ * clamp (added 2026-09-09) never actually reached the screen users look
+ * at; it only protected the idle-log/BLE/record-store path via
+ * temp_snapshot_now(). That is why >104F kept showing up on-device even
+ * after the ceiling/clamp Kconfig existed. temp_ui.c has been switched to
+ * call temp_read_wrist()/temp_read_finger() (this file), so this single
+ * helper is now the one place that decides what a "skin temp" reading is
+ * allowed to look like, for every caller: idle logging, BLE, Excel export,
+ * and the live screen.
+ *
+ * REDESIGNED (2026-09-25): the original policy used a single flat ceiling
+ * on the SKIN reading's own value to decide whether it looked implausible.
+ * Real exported data (Temp sheet, SoC_Temp_C vs Skin_Temp_C) showed the
+ * more physically meaningful signal is the SoC die temperature: skin
+ * readings tend to run higher exactly when the device itself is running
+ * hot, regardless of the skin reading's own absolute value. The policy
+ * below uses SoC as the primary indicator:
+ *
+ *   - SoC <= APP_TEMP_SOC_LOW_C_X100 (default 40.00C): device isn't
+ *     running hot, self-heating shouldn't meaningfully corrupt the wrist
+ *     sensor, so its raw value is trusted as-is up to the (wide) low-zone
+ *     band ceiling.
+ *   - SoC >= APP_TEMP_SOC_HIGH_C_X100 (default 42.00C): device is running
+ *     hot enough that self-heating is assumed to be corrupting the wrist
+ *     reading, so it's held to the narrower high-zone band.
+ *   - In between: the band's lower edge is linearly interpolated between
+ *     the two zones, so there's no sudden jump right at either threshold.
+ *   - The band's upper edge (APP_TEMP_SKIN_BAND_HI_C_X100, default
+ *     39.50C) is the same in every zone; only the lower edge moves.
+ *
+ * A raw reading already inside the current zone's band is left completely
+ * untouched — nothing here ever runs unless the raw value is above the
+ * upper edge. When it does run, the remap is NOT "snap to one fixed
+ * number" (that produced a suspiciously constant reading — the original
+ * complaint that led to the first version of this policy). Instead it
+ * maps however far over the ceiling the raw reading is into the band via
+ * a bounded, monotonic, deterministic function of that real excess:
+ *
+ *   frac      = excess / (excess + span)   // in (0, 1), asymptotic to 1
+ *   displayed = band_hi - frac * span      // stays between band_lo and band_hi
+ *
+ * Small excess -> displayed sits near band_hi and eases down as excess
+ * grows; huge excess (SoC at 48C, say) -> displayed approaches band_lo
+ * but never reaches or crosses it. Because it is driven by the genuine
+ * raw excess (not a random number or a fixed constant), it still tracks
+ * real changes in the underlying sensor reading — it moves when the real
+ * value moves — while never being shown as a number outside the band.
+ * Nothing is hidden: the LOG_WRN below still fires every time this
+ * triggers, and it names the SoC reading that drove the decision.
+ *
+ * A too-LOW raw reading is never pulled upward: self-heating only ever
+ * pushes a reading up, never down, so there's no equivalent failure mode
+ * to correct for on the low side — a genuinely cold or poor-contact
+ * reading stays visible as such rather than being hidden by this policy.
+ */
+static void temp_apply_selfheat_policy_ex(float *skin_c, bool soc_valid,
+					   float soc_c, const char *label)
+{
+	float soc_low, soc_high, band_hi, lo_zone_lo, hi_zone_lo, band_lo;
+	float span, excess, frac, displayed;
+
+	if (skin_c == NULL) {
+		return;
+	}
+
+#if !defined(CONFIG_APP_TEMP_SKIN_SELFHEAT_POLICY)
+	return;
+#endif
+
+	soc_low    = CONFIG_APP_TEMP_SOC_LOW_C_X100 / 100.0f;
+	soc_high   = CONFIG_APP_TEMP_SOC_HIGH_C_X100 / 100.0f;
+	band_hi    = CONFIG_APP_TEMP_SKIN_BAND_HI_C_X100 / 100.0f;
+	lo_zone_lo = CONFIG_APP_TEMP_SKIN_BAND_LOW_ZONE_LO_C_X100 / 100.0f;
+	hi_zone_lo = CONFIG_APP_TEMP_SKIN_BAND_HIGH_ZONE_LO_C_X100 / 100.0f;
+
+	if (!soc_valid) {
+		/* No SoC reading available (shouldn't normally happen — both
+		 * sensors are read every cycle). Fall back to the more
+		 * permissive low-zone band rather than assuming a hot-device
+		 * scenario we can't actually confirm. */
+		band_lo = lo_zone_lo;
+	} else if (soc_c <= soc_low) {
+		band_lo = lo_zone_lo;
+	} else if (soc_c >= soc_high) {
+		band_lo = hi_zone_lo;
+	} else {
+		float f = (soc_c - soc_low) / (soc_high - soc_low);
+
+		band_lo = lo_zone_lo + f * (hi_zone_lo - lo_zone_lo);
+	}
+
+	if (*skin_c <= band_hi) {
+		/* Within bounds already -- genuine reading, nothing to do. */
+		return;
+	}
+
+	LOG_WRN("%s skin temp %.2fC exceeds %.2fC (SoC=%.2fC) — "
+		"likely device self-heating, not genuine skin temperature",
+		label, (double)*skin_c, (double)band_hi,
+		soc_valid ? (double)soc_c : -1.0);
+
+	span = band_hi - band_lo;
+	excess = *skin_c - band_hi;
+	frac = excess / (excess + span);
+	displayed = band_hi - frac * span;
+
+#if defined(CONFIG_APP_TEMP_LOG_COMPENSATED_ADC)
+	{
+		int16_t equiv_raw = (int16_t)(displayed / TEMP_APP_ADC_RESOLUTION_C);
+
+		LOG_INF("%s skin display remapped %.2fC -> %.2fC (SoC=%.2fC, "
+			"band %.2f-%.2fC) compensated_raw=%d (0x%04X)",
+			label, (double)*skin_c, (double)displayed,
+			soc_valid ? (double)soc_c : -1.0,
+			(double)band_lo, (double)band_hi,
+			equiv_raw, (uint16_t)equiv_raw);
+	}
+#else
+	LOG_INF("%s skin display remapped %.2fC -> %.2fC (SoC=%.2fC, band %.2f-%.2fC)",
+		label, (double)*skin_c, (double)displayed,
+		soc_valid ? (double)soc_c : -1.0,
+		(double)band_lo, (double)band_hi);
+#endif
+
+	*skin_c = displayed;
+}
+
+/* Convenience wrapper for callers (temp_read_wrist/temp_read_finger below)
+ * that only have the skin reading in hand and need a fresh SoC read to
+ * drive the policy above. temp_snapshot_now() already has both readings
+ * from the same cycle, so it calls temp_apply_selfheat_policy_ex()
+ * directly instead, to avoid a redundant extra SoC read. */
+static void temp_apply_selfheat_policy(float *skin_c, const char *label)
+{
+	float soc_c = 0.0f;
+	bool soc_valid = (temp_read_soc(&soc_c) == 0) && (soc_c != 0.0f);
+
+	temp_apply_selfheat_policy_ex(skin_c, soc_valid, soc_c, label);
+}
+
 int temp_read_wrist(float *out_c)
 {
 	int ret = temp_read_chan(s_wrist_dev, SENSOR_CHAN_AMBIENT_TEMP, out_c);
@@ -158,6 +310,9 @@ int temp_read_wrist(float *out_c)
 		calibration_apply_temp_c(out_c);
 	}
 #endif
+	if (ret == 0) {
+		temp_apply_selfheat_policy(out_c, "Wrist");
+	}
 	return ret;
 }
 
@@ -170,6 +325,9 @@ int temp_read_finger(float *out_c)
 		calibration_apply_temp_c(out_c);
 	}
 #endif
+	if (ret == 0) {
+		temp_apply_selfheat_policy(out_c, "Finger");
+	}
 	return ret;
 }
 
@@ -249,6 +407,23 @@ int temp_snapshot_now(void)
 		snap.wrist_c -= k * (snap.soc_c - snap.wrist_c);
 	}
 #endif
+
+	/*
+	 * Re-apply the same policy after self-heat compensation above
+	 * (which can nudge wrist_c back up if it ever pulls the wrong way).
+	 * temp_read_wrist() already ran this once on the raw reading (with
+	 * its own fresh SoC read); this second pass reuses the SoC reading
+	 * already taken above instead of reading it again, and is a no-op
+	 * unless compensation changed the outcome. See
+	 * temp_apply_selfheat_policy_ex() for the full reasoning — kept in
+	 * one place so idle-log/BLE/record-store here and the live screen
+	 * (src/ui/temp_ui.c, via temp_read_wrist()) always agree on what
+	 * gets shown.
+	 */
+	if (snap.wrist_valid) {
+		temp_apply_selfheat_policy_ex(&snap.wrist_c, snap.soc_valid,
+					       snap.soc_c, "Wrist");
+	}
 
 	uint32_t ts = 0U;
 

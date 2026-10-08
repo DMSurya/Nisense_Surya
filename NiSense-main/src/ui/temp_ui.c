@@ -260,8 +260,21 @@ void update_temp_screen(void)
 		lv_label_set_text(die_label, "--.- C");
 	}
 	
+	/*
+	 * BUGFIX (2026-09-24): this used to call read_temperature() directly
+	 * on temp_wearable/temp_pulse, bypassing temp_read_wrist()/
+	 * temp_read_finger() in src/sensors/temp.c entirely — which meant
+	 * the self-heat plausibility ceiling/clamp added there never
+	 * applied to this screen, and readings above 104F could still show
+	 * up on-device even with the clamp enabled. Routing through
+	 * temp_read_wrist()/temp_read_finger() means this screen, BLE, and
+	 * the Excel export all now agree on the same number. The nRF die
+	 * reading just below is left on read_temperature() deliberately —
+	 * it is silicon junction temperature, not skin temperature, and
+	 * should not go through a skin-temp plausibility check.
+	 */
 	/* Update wrist body temperature (MAX30208) */
-	if (read_temperature(temp_wearable, SENSOR_CHAN_AMBIENT_TEMP, &temp_c) && temp_c != 0.0f) {
+	if (temp_read_wrist(&temp_c) == 0 && temp_c != 0.0f) {
 		wearable_last_c = temp_c;
 		wearable_last_valid = true;
 
@@ -293,7 +306,7 @@ void update_temp_screen(void)
 	}
 	
 	/* Update finger body temperature (MAX30205) */
-	if (read_temperature(temp_pulse, SENSOR_CHAN_AMBIENT_TEMP, &temp_c) && temp_c != 0.0f) {
+	if (temp_read_finger(&temp_c) == 0 && temp_c != 0.0f) {
 		pulse_last_c = temp_c;
 		pulse_last_valid = true;
 

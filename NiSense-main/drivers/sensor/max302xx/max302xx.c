@@ -283,6 +283,11 @@ static int MAX302XX_read_temp(const struct device *dev, int16_t *temp)
 			return ret;
 		}
 		*temp = (int16_t)((temp_data[0] << 8) | temp_data[1]);
+#if defined(CONFIG_MAX302XX_LOG_RAW_SAMPLES)
+		LOG_INF("max302xx: raw=%d (0x%04X) -> %.3fC (MAX30205, continuous)",
+			*temp, (uint16_t)*temp,
+			(double)((float)*temp * MAX30205_TEMP_RESOLUTION));
+#endif
 		return 0;
 	}
 
@@ -304,10 +309,14 @@ static int MAX302XX_read_temp(const struct device *dev, int16_t *temp)
 
 	uint8_t samples_to_read = MIN(config->fifo_samples, data_count);
 	int32_t temp_sum = 0;
+	float resolution = (data->sensor_type == TEMP_SENSOR_MAX30205)
+				    ? MAX30205_TEMP_RESOLUTION
+				    : MAX302XX_TEMP_RESOLUTION;
 
 	for (uint8_t i = 0; i < samples_to_read; i++)
 	{
 		reg = MAX302XX_REG_FIFO_DATA;
+		int16_t sample;
 
 		if (data->sensor_type == TEMP_SENSOR_MAX30210)
 		{
@@ -319,8 +328,7 @@ static int MAX302XX_read_temp(const struct device *dev, int16_t *temp)
 				return ret;
 			}
 			/* TAG byte in fifo_data[0], temp in [1][2] */
-			int16_t sample = (int16_t)((fifo_data[1] << 8) | fifo_data[2]);
-			temp_sum += sample;
+			sample = (int16_t)((fifo_data[1] << 8) | fifo_data[2]);
 		}
 		else
 		{
@@ -331,12 +339,25 @@ static int MAX302XX_read_temp(const struct device *dev, int16_t *temp)
 			{
 				return ret;
 			}
-			int16_t sample = (int16_t)((fifo_data[0] << 8) | fifo_data[1]);
-			temp_sum += sample;
+			sample = (int16_t)((fifo_data[0] << 8) | fifo_data[1]);
 		}
+
+		temp_sum += sample;
+
+#if defined(CONFIG_MAX302XX_LOG_RAW_SAMPLES)
+		LOG_INF("max302xx: raw[%u]=%d (0x%04X) -> %.3fC", i, sample,
+			(uint16_t)sample, (double)((float)sample * resolution));
+#endif
 	}
 
 	*temp = (int16_t)(temp_sum / samples_to_read);
+
+#if defined(CONFIG_MAX302XX_LOG_RAW_SAMPLES)
+	LOG_INF("max302xx: averaged %u sample(s) -> raw=%d (0x%04X) -> %.3fC",
+		samples_to_read, *temp, (uint16_t)*temp,
+		(double)((float)*temp * resolution));
+#endif
+
 	return 0;
 }
 
@@ -531,6 +552,12 @@ static int MAX302XX_sample_fetch(const struct device *dev,
 			LOG_ERR("Timeout waiting for conversion %d: %d", i, ret);
 			return ret;
 		}
+
+#if CONFIG_MAX302XX_INTERSAMPLE_DELAY_MS > 0
+		/* Deliberate settle gap between back-to-back conversions — see
+		 * MAX302XX_INTERSAMPLE_DELAY_MS in Kconfig for why. */
+		k_msleep(CONFIG_MAX302XX_INTERSAMPLE_DELAY_MS);
+#endif
 	}
 
 	LOG_DBG("All %d conversions complete, reading from FIFO", samples_to_collect);

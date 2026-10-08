@@ -83,6 +83,21 @@ struct glucose_sensor_data {
 	
 	/** Sample count */
 	uint16_t sample_count;
+
+	/**
+	 * BUGFIX (2026-10-06): true for exactly one upcoming measurement
+	 * when glucose_sensor_impl_set_fasting_insulin() was called with a
+	 * real, externally-provided insulin value (e.g. a real lab result
+	 * relayed over BLE) — set by that function, consumed (cleared) by
+	 * the fetch handler in glucose_sensor.c right after it uses
+	 * result.fasting_insulin_uiu_ml as-is. When false (the normal case
+	 * — nobody has provided a real value), the fetch handler predicts
+	 * fasting insulin from this measurement's own glucose reading
+	 * instead (see glucose_insulin_predict.c) rather than reusing
+	 * whatever insulin value happens to still be sitting in
+	 * result.fasting_insulin_uiu_ml from a previous cycle.
+	 */
+	bool fasting_insulin_is_real;
 };
 
 /** Measurement states */

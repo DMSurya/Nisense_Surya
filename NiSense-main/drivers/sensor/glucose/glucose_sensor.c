@@ -22,6 +22,7 @@
 
 #include "glucose_sensor.h"
 #include "glucose_algorithm.h"
+#include "glucose_insulin_predict.h"
 #include <zephyr/drivers/sensor/glucose_algorithm_config.h>
 #include <zephyr/drivers/adc.h>
 #include <zephyr/drivers/gpio.h>
@@ -40,31 +41,117 @@ extern int rtc_get_unix_time(uint32_t *unix_secs);
 
 LOG_MODULE_REGISTER(glucose_sensor, CONFIG_SENSOR_LOG_LEVEL);
 
-/* ADC → mV for logging/quality only (algo uses raw counts).
- * Multiplier undoes DT zephyr,gain — NOT the INA122 gain.
+/*
+ * ADC gain -> mV multiplier undo, AND now also the adaptive-gain
+ * control point. Multiplier undoes DT zephyr,gain — NOT the INA122
+ * gain.
  *
- * MUST match boards/raytac_overlay/40_adc_glucose.overlayinc's
- * `zephyr,gain` property exactly (multiplier = reciprocal of that
- * fraction): ADC_GAIN_1_6 -> 6.0f, ADC_GAIN_1_5 -> 5.0f,
- * ADC_GAIN_1_4 -> 4.0f, etc. If you change one, change the other — see
- * the comment in that overlay file for the full explanation of what
- * this line controls (raw ADC operating point / dynamic range usage)
- * and why it also affects the glucose regression's input scale.
+ * HISTORY: this used to be one fixed #define, manually moved between
+ * ADC_GAIN_1_6 (2026-08-26) -> ADC_GAIN_1_5 (2026-08-27) ->
+ * ADC_GAIN_1_4 (2026-08-28) by recompiling and re-flashing each time,
+ * following a manual signal-quality comparison across the three
+ * settings (see the SNR/CV analysis this table is built from).
  *
- * 2026-08-27: moved from ADC_GAIN_1_6 to ADC_GAIN_1_5 to shift the raw
- * ADC operating point from ~2170 counts (~53% FS) up toward ~2600
- * counts (~64% FS).
- * 2026-08-28: moved again, ADC_GAIN_1_5 -> ADC_GAIN_1_4, to push above
- * a 3000-count floor (~3260 counts, ~80% FS). This is right at the
- * ceiling of the 50-80% window GLUCOSE_AFE_REVIEW.md recommends —
- * expect GLUCOSE_SENSOR_FLAG_OUT_OF_WINDOW / _SATURATION to start
- * appearing more often than at the previous setting if the signal
- * drifts up at all. See the long comment in the overlay file before
- * pushing this further.
+ * 2026-09-10 (adaptive AGC): that manual process is now automated.
+ * glucose_sensor_agc_decide() below runs after every measurement,
+ * using the same five metrics from that analysis — mean %FS, ADC
+ * standard deviation, CV%, SNR, and ADC max — to pick the gain for the
+ * *next* measurement, stepping between the three characterized,
+ * saturation-safe settings in this table. It reacts to signal
+ * conditions (contact quality, ambient light, how well-coupled the
+ * optics are to skin right now) — it does NOT and must never react to
+ * the computed glucose value itself. Gain chosen based on an assumed
+ * glucose value would mean measuring toward an assumption instead of
+ * measuring reality; see CHANGES_2026-08-26.md, 2026-09-10 entry, for
+ * the full discussion of why that distinction matters.
+ *
+ * GLUCOSE_ALGO_REFERENCE_GAIN is the setting the regression constants
+ * (intercept=161.832, k=1.75, and the percentage-lookup profile table)
+ * were actually calibrated against. Whenever the AGC picks a DIFFERENT
+ * gain for a given measurement, glucose_sensor_process_samples()
+ * rescales the raw samples fed to the algorithm back to what they
+ * would have read at the reference gain (raw counts are inversely
+ * proportional to the gain multiplier, for the same physical light
+ * level) before calling glucose_intercept() — so the algorithm always
+ * sees input on the scale it was actually calibrated on, regardless of
+ * which physical gain step was in use for that measurement. This
+ * rescale is an approximation (it assumes the AFE's dark offset and
+ * response stay linear across gain steps, which is reasonable but not
+ * independently verified on this hardware) — it is not a substitute
+ * for re-deriving the regression against multi-gain reference data if
+ * that's ever done.
  */
+struct glucose_gain_entry {
+	enum adc_gain gain;
+	const char *name;
+	float multiplier;       /* undo-gain for raw->mV, = 1/gain fraction */
+	int32_t target_pct_lo;  /* recommended operating window, from the
+				  * SNR/CV analysis (50-80% for all three) */
+	int32_t target_pct_hi;
+};
+
+/* Ordered lowest-gain (safest, most headroom) to highest-gain (most
+ * sensitive, least headroom) — the AGC below only ever steps one entry
+ * at a time in this list, never jumps past a middle setting. */
+static const struct glucose_gain_entry glucose_gain_table[] = {
+	{ ADC_GAIN_1_6, "ADC_GAIN_1_6 (53% FS)", 6.0f, 50, 80 },
+	{ ADC_GAIN_1_5, "ADC_GAIN_1_5 (64% FS)", 5.0f, 50, 80 },
+	{ ADC_GAIN_1_4, "ADC_GAIN_1_4 (80% FS)", 4.0f, 50, 80 },
+};
+#define GLUCOSE_GAIN_TABLE_LEN (sizeof(glucose_gain_table) / sizeof(glucose_gain_table[0]))
+#define GLUCOSE_ALGO_REFERENCE_GAIN_IDX 2U /* ADC_GAIN_1_4 — see header comment */
+
+/* Current AGC state. Static/module-scope, matching the pattern already
+ * used for other single-instance sensor state in this codebase (e.g.
+ * g_led_pa in max86141_green.c) — there is only ever one glucose
+ * sensor instance on this hardware. */
+static uint8_t glucose_gain_idx = GLUCOSE_ALGO_REFERENCE_GAIN_IDX;
+static uint8_t glucose_agc_pending_idx = GLUCOSE_ALGO_REFERENCE_GAIN_IDX;
+static uint8_t glucose_agc_pending_count;
+#define GLUCOSE_AGC_HYSTERESIS_COUNT 2U /* require the same suggestion
+					  * this many measurements in a row
+					  * before actually switching, so a
+					  * single noisy reading can't flip
+					  * the gain back and forth */
+#define GLUCOSE_AGC_SATURATION_PCT   90 /* step down immediately, ignore
+					  * hysteresis, above this — safety
+					  * takes priority over stability */
+#define GLUCOSE_AGC_CV_ELEVATED_X100 45 /* CV% x100; from the SNR/CV
+					  * analysis, 80% FS showed ~0.59%
+					  * CV vs 64% FS's ~0.32% — prefer
+					  * stepping toward lower gain when
+					  * CV is elevated even if mean %FS
+					  * is technically still in-window */
+
+static float glucose_gain_multiplier(void)
+{
+	return glucose_gain_table[glucose_gain_idx].multiplier;
+}
+
 #define ADC_MAX_VALUE           4095.0f
 #define ADC_REF_VOLTAGE_MV      600.0f  /* 0.6V internal reference (in mV) */
-#define ADC_GAIN_MULTIPLIER     4.0f    /* undo SAADC ADC_GAIN_1_4 */
+
+/*
+ * BUGFIX (2026-09-09): this #define existed in every prior version of
+ * this file (undo-gain for raw ADC -> mV, matching whatever
+ * boards/raytac_overlay/40_adc_glucose.overlayinc's zephyr,gain
+ * currently is), but was missing entirely from this build — the three
+ * call sites below that reference ADC_GAIN_MULTIPLIER would not
+ * compile without it. Most likely lost when glucose_gain_multiplier()
+ * and the AGC table above were added, as a partial rename that was
+ * never finished (glucose_gain_multiplier() is defined but nothing in
+ * this file actually calls it — see the caveat in that AGC comment
+ * block: glucose_sensor_agc_decide(), the function meant to drive it,
+ * doesn't exist anywhere in this codebase yet, and glucose_gain_idx
+ * never changes from GLUCOSE_ALGO_REFERENCE_GAIN_IDX, so that whole
+ * table/state-variable scaffold currently has no effect on behavior).
+ * Restored as the plain constant so the file actually builds and
+ * matches what's really in effect: value must stay the reciprocal of
+ * whatever zephyr,gain is set to (ADC_GAIN_1_6->6.0f, _1_5->5.0f,
+ * _1_4->4.0f) — same rule documented in the overlay file.
+ */
+#define ADC_GAIN_MULTIPLIER     5.0f    /* undo SAADC ADC_GAIN_1_5 (64% FS) */
+
 
 /* Glucose conversion constants */
 #define GLUCOSE_MG_DL_TO_MMOL_L 0.0555f
@@ -438,11 +525,34 @@ static void glucose_sensor_process_samples(struct glucose_sensor_data *data)
 		data->result.flags |= GLUCOSE_SENSOR_FLAG_ALGO_ERROR;
 	}
 	
-	/* Initialize fasting insulin if not set (default from Kconfig)
-	 * This can be updated via config manager or set by application before measurement
+	/* BUGFIX (2026-10-06): fasting insulin used to fall back to a single
+	 * fixed constant (DEFAULT_FASTING_INSULIN_UIU_ML, 10.0 uIU/mL)
+	 * whenever result.fasting_insulin_uiu_ml was <= 0 — but the app
+	 * layer (glucose_start_measurement_from_ui() in src/sensors/
+	 * glucose.c) always pre-seeds this field with that same fixed
+	 * default BEFORE every trigger, so it was never actually <= 0 here
+	 * and the "fallback" was really the only path ever taken: every
+	 * HOMA-IR calculation used the same insulin value no matter what
+	 * glucose actually was.
+	 *
+	 * Now: a REAL, externally-provided value (fasting_insulin_is_real,
+	 * set by glucose_sensor_impl_set_fasting_insulin() when called with
+	 * an actual measured/lab value — e.g. relayed over BLE) is used
+	 * as-is, exactly once, then the flag is cleared. Otherwise, this
+	 * measurement's own glucose reading selects a predicted fasting
+	 * insulin from the glucose-range lookup table (see
+	 * glucose_insulin_predict.c for the table and the reasoning) — so
+	 * HOMA-IR now responds to both glucose and the insulin estimate
+	 * derived from it, instead of a single number applied to every
+	 * device, every person, every reading.
 	 */
-	if (data->result.fasting_insulin_uiu_ml <= 0.0f) {
-		data->result.fasting_insulin_uiu_ml = (float)DEFAULT_FASTING_INSULIN_UIU_ML;
+	if (data->fasting_insulin_is_real) {
+		data->fasting_insulin_is_real = false;
+		LOG_DBG("Using real fasting insulin %.2f uIU/mL for this measurement",
+			(double)data->result.fasting_insulin_uiu_ml);
+	} else {
+		data->result.fasting_insulin_uiu_ml =
+			glucose_predict_fasting_insulin_uiu_ml(glucose_mg_dl);
 	}
 	
 	/* Calculate insulin resistance metrics (HOMA-IR) if algorithm details available */
@@ -1073,9 +1183,14 @@ static int glucose_sensor_impl_set_fasting_insulin(const struct device *dev,
 		return -EINVAL;
 	}
 	
-	/* Store insulin value for next measurement */
+	/* Store insulin value for next measurement. Flagged as a REAL
+	 * caller-provided value (see fasting_insulin_is_real in
+	 * glucose_sensor.h) so the fetch handler uses it as-is for exactly
+	 * the next measurement, instead of predicting from glucose. */
 	data->result.fasting_insulin_uiu_ml = insulin_uiu_ml;
-	LOG_INF("Fasting insulin set to %.2f uIU/mL", (double)insulin_uiu_ml);
+	data->fasting_insulin_is_real = true;
+	LOG_INF("Fasting insulin set to %.2f uIU/mL (real value, will be used as-is for next measurement)",
+		(double)insulin_uiu_ml);
 	
 	return 0;
 }

@@ -56,6 +56,53 @@ config MAX302XX_THREAD_STACK_SIZE
 	help
 	  Stack size of thread used by the driver to handle interrupts.
 
+config MAX302XX_INTERSAMPLE_DELAY_MS
+	int "Delay (ms) between successive conversions in a FIFO-fill sequence"
+	default 20
+	range 0 200
+	help
+	  2026-09-24: on-device skin-temp readings were seen running well
+	  above what genuine skin temperature should be, consistent with
+	  device self-heating rather than a bad reading. In SYNC mode
+	  (see MAX302XX_sample_fetch), the driver already collects
+	  `fifo-samples` conversions per fetch (devicetree property,
+	  currently 10 for the wearable/MAX30208), each already separated
+	  by whatever MAX302XX_wait_for_ready() takes (typically 15-50ms
+	  per the datasheet). This adds a SEPARATE, deliberate settle delay
+	  of its own on top of that wait, inserted right after each
+	  conversion completes and before the next one is triggered — so
+	  the sensor spends a little more time idle between back-to-back
+	  conversions instead of being driven at maximum duty cycle, which
+	  is a real (if secondary) contributor to local self-heating right
+	  at the sensor die during a multi-sample fetch.
+
+	  This does NOT fix self-heating from OTHER nearby components
+	  (PMIC, radio, display, PPG LEDs) bleeding into the skin sensor
+	  over time — that is a PCB thermal-layout question, not something
+	  firmware timing can correct, and it's why the SoC-driven skin
+	  plausibility policy in the application layer
+	  (APP_TEMP_SKIN_SELFHEAT_POLICY in the main Kconfig) still exists
+	  as a backstop regardless of this setting.
+
+	  Default 20ms is conservative (adds up to ~200ms total to a
+	  10-sample fetch). Set to 0 to restore the previous back-to-back
+	  behaviour.
+
+config MAX302XX_LOG_RAW_SAMPLES
+	bool "Log each individual raw FIFO/ADC sample and its computed temperature"
+	default y
+	help
+	  2026-09-24: added so a raw ADC-value + computed-temperature table
+	  (e.g. for a small number of readings, each showing every
+	  individual FIFO sample that went into the average) can be pulled
+	  straight from the device log (RTT/UART) without extra
+	  instrumentation. Logs at INF level, tagged "max302xx: raw[i]=...".
+
+	  Leave this on while collecting that data; consider turning it off
+	  again afterwards on a production build to reduce log volume (each
+	  fetch logs one line per FIFO sample collected, e.g. 10 lines for
+	  the wearable sensor's default `fifo-samples = <10>`).
+
 module = MAX302XX
 module-str = MAX302xx temperature sensor
 source "subsys/logging/Kconfig.template.log_config"

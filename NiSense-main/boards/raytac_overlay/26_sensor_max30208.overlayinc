@@ -5,6 +5,10 @@
 		reg = <0x53>;
 		status = "okay";
 		int-gpios = <&gpio1 2 GPIO_ACTIVE_LOW>;
-		fifo-samples = <4>;
+		/* 2026-09-24: raised 4 -> 10 at the team's request, both for
+		 * better noise averaging and so a single fetch logs exactly
+		 * 10 raw ADC samples (see CONFIG_MAX302XX_LOG_RAW_SAMPLES)
+		 * for the ADC-values-per-reading data being collected. */
+		fifo-samples = <10>;
 	};
 };
